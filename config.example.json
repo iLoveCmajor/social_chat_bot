@@ -1,0 +1,9 @@
+# Example configuration file
+# Copy this to config.json and fill in your bot token
+{
+  "bot_token": "YOUR_BOT_TOKEN_HERE",
+  "reminder_day": 0,
+  "reminder_time": "09:00",
+  "matching_day": 0,
+  "matching_time": "12:00"
+}
