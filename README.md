@@ -53,6 +53,42 @@ Alternatively, set the bot token as an environment variable:
 export BOT_TOKEN="your_bot_token_here"
 ```
 
+### Quick Start with Script
+
+Use the provided startup script:
+```bash
+./start.sh
+```
+
+### Docker Deployment
+
+Using Docker Compose (recommended):
+```bash
+# Set your bot token
+export BOT_TOKEN="your_bot_token_here"
+
+# Start the bot
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the bot
+docker-compose down
+```
+
+Using Docker directly:
+```bash
+# Build the image
+docker build -t social-chat-bot .
+
+# Run the container
+docker run -d --name social-chat-bot \
+  -e BOT_TOKEN="your_bot_token_here" \
+  -v $(pwd)/bot_data.db:/app/bot_data.db \
+  social-chat-bot
+```
+
 ## Configuration
 
 Edit `config.json` to customize the bot behavior:
@@ -135,13 +171,32 @@ Database file: `bot_data.db` (created automatically on first run)
 ```
 social_chat_bot/
 ├── bot.py                    # Main bot implementation
+├── test_bot.py              # Test suite for bot functionality
 ├── requirements.txt          # Python dependencies
 ├── config.example.json       # Example configuration
 ├── config.json              # Your configuration (not in git)
+├── .env.example             # Example environment variables
+├── start.sh                 # Startup script
+├── Dockerfile               # Docker container definition
+├── docker-compose.yml       # Docker Compose configuration
 ├── bot_data.db              # SQLite database (not in git)
 ├── .gitignore               # Git ignore file
 └── README.md                # This file
 ```
+
+### Testing
+
+Run the test suite to verify functionality:
+```bash
+python3 test_bot.py
+```
+
+The test suite validates:
+- Database initialization
+- User management operations
+- Participation tracking
+- Data retrieval functions
+
 
 ### Running in Production
 
