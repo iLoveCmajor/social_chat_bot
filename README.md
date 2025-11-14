@@ -2,6 +2,8 @@
 
 A Telegram bot that helps people find weekly social partners. The bot sends weekly reminders asking users if they want to be social, then matches participants together by sharing their contact information.
 
+📖 **Documentation:** [Usage Examples](USAGE.md) | [Contributing Guide](CONTRIBUTING.md)
+
 ## Features
 
 - 📅 **Weekly Reminders**: Automatically sends reminders at the start of each week
@@ -180,8 +182,11 @@ social_chat_bot/
 ├── Dockerfile               # Docker container definition
 ├── docker-compose.yml       # Docker Compose configuration
 ├── bot_data.db              # SQLite database (not in git)
-├── .gitignore               # Git ignore file
-└── README.md                # This file
+├── README.md                # This file
+├── USAGE.md                 # Detailed usage examples
+├── CONTRIBUTING.md          # Contributing guidelines
+├── LICENSE                  # MIT License
+└── .gitignore               # Git ignore file
 ```
 
 ### Testing
@@ -225,16 +230,17 @@ WantedBy=multi-user.target
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-This project is open source and available under the MIT License.
+This project is open source and available under the [MIT License](LICENSE).
 
 ## Support
 
 If you encounter any issues or have questions:
-1. Check the logs for error messages
-2. Verify your bot token is correct
-3. Ensure the bot has necessary permissions in your Telegram group
-4. Open an issue on GitHub with details about the problem
+1. Check the [Usage Examples](USAGE.md) for common scenarios
+2. Check the logs for error messages
+3. Verify your bot token is correct
+4. Ensure the bot has necessary permissions in your Telegram group
+5. Open an issue on GitHub with details about the problem
