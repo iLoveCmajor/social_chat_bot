@@ -5,5 +5,8 @@
   "reminder_day": 0,
   "reminder_time": "09:00",
   "matching_day": 0,
-  "matching_time": "12:00"
+  "matching_time": "12:00",
+  "admin_ids": [
+    123456789
+  ]
 }

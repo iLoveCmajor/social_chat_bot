@@ -11,6 +11,7 @@ A Telegram bot that helps people find weekly social partners. The bot sends week
 - 👥 **Participant Matching**: All opted-in users receive a list of others who want to hang out
 - 💾 **Persistent Storage**: SQLite database tracks user preferences and weekly participation
 - 🔔 **Automated Scheduling**: Uses APScheduler for reliable weekly notifications
+- 🛡️ **Admin Controls**: Manually trigger reminders, matching, reset weeks, and monitor status
 
 ## How It Works
 
@@ -101,7 +102,10 @@ Edit `config.json` to customize the bot behavior:
   "reminder_day": 0,
   "reminder_time": "09:00",
   "matching_day": 0,
-  "matching_time": "12:00"
+  "matching_time": "12:00",
+  "admin_ids": [
+    123456789
+  ]
 }
 ```
 
@@ -111,6 +115,7 @@ Edit `config.json` to customize the bot behavior:
 - `reminder_time`: Time to send reminders (24-hour format, e.g., "09:00")
 - `matching_day`: Day of week to send participant lists (0=Monday, 6=Sunday)
 - `matching_time`: Time to send participant lists (24-hour format, e.g., "12:00")
+- `admin_ids`: List of Telegram user IDs allowed to use admin commands (optional). You can also set the `ADMIN_IDS` env var with a comma-separated list, e.g., `export ADMIN_IDS="111,222"`.
 
 ## Usage
 
@@ -132,6 +137,13 @@ Once the bot is running, users can interact with it using these commands:
 - `/status` - Check your current participation status
 - `/list` - View all participants for this week
 - `/help` - Show help message with all commands
+
+**Admin Commands** (restricted to IDs in `admin_ids` / `ADMIN_IDS`):
+
+- `/admin_optin` - Immediately send the weekly opt-in reminder
+- `/admin_matching` - Send the current week's participant list right away
+- `/admin_status` - See how many users are active/opted-in/opted-out for the current week
+- `/admin_reset` - Clear participation data for the current week and start fresh
 
 ## Example Workflow
 

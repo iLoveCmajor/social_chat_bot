@@ -8,7 +8,7 @@ import os
 import json
 import logging
 from datetime import datetime, time
-from typing import Dict, Set, List
+from typing import Dict, Set, List, Optional
 import sqlite3
 from pathlib import Path
 
@@ -32,6 +32,30 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _parse_admin_ids(value) -> List[int]:
+    """Parse admin IDs from config/env inputs."""
+    if value is None:
+        return []
+    
+    if isinstance(value, str):
+        raw_values = [item.strip() for item in value.split(',')]
+    elif isinstance(value, (list, tuple, set)):
+        raw_values = value
+    else:
+        raw_values = [value]
+    
+    admin_ids = []
+    for item in raw_values:
+        if item in ("", None):
+            continue
+        try:
+            admin_ids.append(int(item))
+        except (TypeError, ValueError):
+            logger.warning("Ignoring invalid ADMIN_IDS entry: %s", item)
+    
+    return admin_ids
+
+
 class SocialChatBot:
     """Main bot class for handling social matching functionality."""
     
@@ -41,6 +65,7 @@ class SocialChatBot:
         self.db_path = Path(__file__).parent / "bot_data.db"
         self.scheduler = AsyncIOScheduler()
         self.application = None
+        self.admin_ids: Set[int] = set(config.get('admin_ids', []))
         self._init_database()
     
     def _init_database(self):
@@ -154,6 +179,84 @@ class SocialChatBot:
         
         conn.close()
         return users
+
+    def _is_admin(self, user_id: int) -> bool:
+        """Check whether a user is an admin."""
+        return user_id in self.admin_ids
+
+    async def _ensure_admin(self, update: Update) -> bool:
+        """Verify admin access for a command."""
+        user = update.effective_user
+        if user and self._is_admin(user.id):
+            return True
+
+        logger.warning("Unauthorized admin command attempt by user_id=%s", user.id if user else "unknown")
+        if update.message:
+            await update.message.reply_text("⛔ This command is restricted to admins.")
+        return False
+
+    def _reset_current_week_participation(self) -> int:
+        """Delete participation records for the current week."""
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            'DELETE FROM weekly_participation WHERE week_year = ?',
+            (week,)
+        )
+        deleted = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return deleted
+
+    def _get_weekly_status(self) -> Dict[str, int]:
+        """Return counts for the current week."""
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT COUNT(*) FROM users WHERE is_active = 1')
+        active_users = cursor.fetchone()[0] or 0
+
+        cursor.execute(
+            '''
+            SELECT opted_in, COUNT(*)
+            FROM weekly_participation
+            WHERE week_year = ?
+            GROUP BY opted_in
+            ''',
+            (week,)
+        )
+
+        opted_in = 0
+        opted_out = 0
+        responded = 0
+        for row in cursor.fetchall():
+            opted_flag, count = row
+            responded += count
+            if opted_flag == 1:
+                opted_in = count
+            else:
+                opted_out += count
+
+        conn.close()
+
+        pending = max(active_users - responded, 0)
+        return {
+            'week': week,
+            'active_users': active_users,
+            'opted_in': opted_in,
+            'opted_out': opted_out,
+            'pending': pending
+        }
+
+    def _get_bot(self, context: Optional[ContextTypes.DEFAULT_TYPE]):
+        """Resolve the bot instance from the context or application."""
+        if context and getattr(context, 'bot', None):
+            return context.bot
+        if self.application:
+            return self.application.bot
+        raise RuntimeError("Bot application is not initialized yet.")
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command."""
@@ -280,10 +383,11 @@ class SocialChatBot:
         
         await update.message.reply_text(message)
     
-    async def send_weekly_reminder(self, context: ContextTypes.DEFAULT_TYPE):
+    async def send_weekly_reminder(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send weekly reminder to all active users."""
         users = self._get_all_active_users()
         week = self._get_current_week()
+        bot = self._get_bot(context)
         
         logger.info(f"Sending weekly reminder to {len(users)} users for week {week}")
         
@@ -299,19 +403,24 @@ class SocialChatBot:
             "/list - See who's already signed up"
         )
         
+        sent_count = 0
         for user in users:
             try:
-                await context.bot.send_message(
+                await bot.send_message(
                     chat_id=user['chat_id'],
                     text=message
                 )
+                sent_count += 1
             except Exception as e:
                 logger.error(f"Failed to send reminder to user {user['user_id']}: {e}")
+        
+        return sent_count
     
-    async def send_participant_list(self, context: ContextTypes.DEFAULT_TYPE):
+    async def send_participant_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send list of participants to all who opted in."""
         participants = self._get_participants()
         week = self._get_current_week()
+        bot = self._get_bot(context)
         
         if not participants:
             logger.info(f"No participants for week {week}, skipping list distribution")
@@ -332,14 +441,67 @@ class SocialChatBot:
         list_message += "Have a great week! 😊"
         
         # Send to all participants
+        sent_count = 0
         for participant in participants:
             try:
-                await context.bot.send_message(
+                await bot.send_message(
                     chat_id=participant['chat_id'],
                     text=list_message
                 )
+                sent_count += 1
             except Exception as e:
                 logger.error(f"Failed to send list to user {participant['user_id']}: {e}")
+        
+        return sent_count
+
+    async def admin_start_optin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Allow admins to manually trigger the opt-in reminder."""
+        if not await self._ensure_admin(update):
+            return
+        
+        sent = await self.send_weekly_reminder(context)
+        if sent:
+            await update.message.reply_text(f"✅ Weekly reminder sent to {sent} active users.")
+        else:
+            await update.message.reply_text("⚠️ No active users found to notify.")
+
+    async def admin_start_matching_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Allow admins to manually trigger participant matching."""
+        if not await self._ensure_admin(update):
+            return
+        
+        sent = await self.send_participant_list(context)
+        if sent:
+            await update.message.reply_text(f"📬 Participant list sent to {sent} opted-in users.")
+        else:
+            await update.message.reply_text("ℹ️ There are no participants to send a list to this week.")
+
+    async def admin_status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show weekly stats to admins."""
+        if not await self._ensure_admin(update):
+            return
+        
+        status = self._get_weekly_status()
+        message = (
+            f"📊 Weekly Status ({status['week']}):\n"
+            f"• Active users: {status['active_users']}\n"
+            f"• Opted in: {status['opted_in']}\n"
+            f"• Opted out: {status['opted_out']}\n"
+            f"• No response yet: {status['pending']}"
+        )
+        
+        await update.message.reply_text(message)
+
+    async def admin_reset_week_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Reset participation data for the current week."""
+        if not await self._ensure_admin(update):
+            return
+        
+        deleted = self._reset_current_week_participation()
+        week = self._get_current_week()
+        await update.message.reply_text(
+            f"🔄 Cleared {deleted} participation record(s) for week {week}."
+        )
     
     def run(self):
         """Run the bot."""
@@ -353,6 +515,10 @@ class SocialChatBot:
         self.application.add_handler(CommandHandler("optout", self.optout_command))
         self.application.add_handler(CommandHandler("status", self.status_command))
         self.application.add_handler(CommandHandler("list", self.list_command))
+        self.application.add_handler(CommandHandler("admin_optin", self.admin_start_optin_command))
+        self.application.add_handler(CommandHandler("admin_matching", self.admin_start_matching_command))
+        self.application.add_handler(CommandHandler("admin_status", self.admin_status_command))
+        self.application.add_handler(CommandHandler("admin_reset", self.admin_reset_week_command))
         
         # Schedule weekly reminder and matching
         reminder_day = self.config.get('reminder_day', 0)  # Monday by default
@@ -368,14 +534,12 @@ class SocialChatBot:
         self.scheduler.add_job(
             self.send_weekly_reminder,
             CronTrigger(day_of_week=reminder_day, hour=reminder_hour, minute=reminder_minute),
-            args=[self.application.job_queue],
             id='weekly_reminder'
         )
         
         self.scheduler.add_job(
             self.send_participant_list,
             CronTrigger(day_of_week=matching_day, hour=matching_hour, minute=matching_minute),
-            args=[self.application.job_queue],
             id='send_matches'
         )
         
@@ -400,6 +564,11 @@ def load_config():
     
     # Override with environment variables if present
     bot_token = os.getenv('BOT_TOKEN') or config.get('bot_token')
+    admin_env = os.getenv('ADMIN_IDS')
+    if admin_env:
+        config['admin_ids'] = _parse_admin_ids(admin_env)
+    else:
+        config['admin_ids'] = _parse_admin_ids(config.get('admin_ids'))
     
     if not bot_token:
         raise ValueError(
