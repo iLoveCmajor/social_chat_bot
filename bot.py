@@ -92,10 +92,17 @@ class SocialChatBot:
                 week_year TEXT,
                 opted_in INTEGER DEFAULT 0,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                is_busy INTEGER DEFAULT 0,
                 UNIQUE(user_id, week_year)
             )
         ''')
-        
+
+        # Ensure legacy databases have the is_busy column
+        cursor.execute("PRAGMA table_info(weekly_participation)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'is_busy' not in columns:
+            cursor.execute('ALTER TABLE weekly_participation ADD COLUMN is_busy INTEGER DEFAULT 0')
+
         conn.commit()
         conn.close()
         logger.info("Database initialized successfully")
@@ -133,13 +140,13 @@ class SocialChatBot:
         conn.close()
     
     def _get_participants(self) -> List[Dict]:
-        """Get all users who opted in for this week."""
+        """Get all users who opted in for this week, including busy status."""
         week = self._get_current_week()
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT u.user_id, u.username, u.first_name, u.chat_id
+            SELECT u.user_id, u.username, u.first_name, u.chat_id, COALESCE(wp.is_busy, 0)
             FROM users u
             JOIN weekly_participation wp ON u.user_id = wp.user_id
             WHERE wp.week_year = ? AND wp.opted_in = 1 AND u.is_active = 1
@@ -151,11 +158,126 @@ class SocialChatBot:
                 'user_id': row[0],
                 'username': row[1],
                 'first_name': row[2],
-                'chat_id': row[3]
+                'chat_id': row[3],
+                'is_busy': bool(row[4])
             })
         
         conn.close()
         return participants
+
+    def _get_participants_grouped(self) -> Dict[str, List[Dict]]:
+        """Return participants grouped into unoccupied and occupied lists."""
+        participants = self._get_participants()
+        grouped = {
+            'unoccupied': [],
+            'occupied': []
+        }
+
+        for participant in participants:
+            key = 'occupied' if participant['is_busy'] else 'unoccupied'
+            grouped[key].append(participant)
+
+        return grouped
+
+    def _get_user_busy_status(self, user_id: int) -> Optional[bool]:
+        """Return whether the user is marked busy for the week."""
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT opted_in, is_busy FROM weekly_participation
+            WHERE user_id = ? AND week_year = ?
+            ''',
+            (user_id, week)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if not row or row[0] != 1:
+            return None
+        return bool(row[1])
+
+    def _set_user_busy_status(self, user_id: int, busy: bool) -> bool:
+        """Update busy status for an opted-in user. Returns True if updated."""
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT id FROM weekly_participation
+            WHERE user_id = ? AND week_year = ? AND opted_in = 1
+            ''',
+            (user_id, week)
+        )
+        exists = cursor.fetchone()
+        if not exists:
+            conn.close()
+            return False
+
+        cursor.execute(
+            '''
+            UPDATE weekly_participation
+            SET is_busy = ?
+            WHERE user_id = ? AND week_year = ?
+            ''',
+            (1 if busy else 0, user_id, week)
+        )
+        conn.commit()
+        conn.close()
+        return True
+
+    def _format_participant_lists_message(self) -> str:
+        """Build a message showing unoccupied and occupied participants."""
+        grouped = self._get_participants_grouped()
+        week = self._get_current_week()
+        header = f"🎉 People available to hang out this week ({week}):\n\n"
+
+        def format_section(title: str, entries: List[Dict]) -> str:
+            if not entries:
+                return f"{title}:\n- None yet\n\n"
+            lines = []
+            for idx, participant in enumerate(entries, 1):
+                username = f"@{participant['username']}" if participant['username'] else participant['first_name']
+                lines.append(f"{idx}. {username}")
+            return f"{title}:\n" + "\n".join(lines) + "\n\n"
+
+        message = header
+        message += format_section("🟢 Unoccupied", grouped['unoccupied'])
+        message += format_section("🔴 Occupied", grouped['occupied'])
+
+        total = len(grouped['unoccupied']) + len(grouped['occupied'])
+        if total:
+            message += f"👥 Total opted in: {total}\n\n"
+
+        if not grouped['unoccupied'] and not grouped['occupied']:
+            message += "No one has opted in yet. Use /optin to join the fun!\n\n"
+
+        message += "Use the buttons below to update your status or refresh the lists."
+        return message
+
+    def _build_participant_list_keyboard(self, user_id: int) -> InlineKeyboardMarkup:
+        """Return the inline keyboard for list interactions."""
+        busy_status = self._get_user_busy_status(user_id)
+        buttons: List[List[InlineKeyboardButton]] = []
+
+        if busy_status is True:
+            buttons.append([
+                InlineKeyboardButton("Mark me unoccupied", callback_data="list_set_available")
+            ])
+        elif busy_status is False:
+            buttons.append([
+                InlineKeyboardButton("Mark me busy", callback_data="list_set_busy")
+            ])
+
+        buttons.append([
+            InlineKeyboardButton("Refresh 🔄", callback_data="list_refresh")
+        ])
+
+        if busy_status is None:
+            # Only refresh is meaningful if the user is not opted in yet
+            return InlineKeyboardMarkup(buttons[-1:])
+
+        return InlineKeyboardMarkup(buttons)
     
     def _get_all_active_users(self) -> List[Dict]:
         """Get all active users for sending reminders."""
@@ -363,25 +485,45 @@ class SocialChatBot:
     
     async def list_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /list command - show all participants for this week."""
-        participants = self._get_participants()
-        week = self._get_current_week()
-        
-        if not participants:
-            message = (
-                f"📭 No one has signed up yet for week {week}.\n\n"
-                "Be the first! Use /optin to join."
-            )
+        user_id = update.effective_user.id
+        message = self._format_participant_lists_message()
+        reply_markup = self._build_participant_list_keyboard(user_id)
+
+        await update.message.reply_text(message, reply_markup=reply_markup)
+
+    async def list_callback_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle inline button interactions for the participant list."""
+        query = update.callback_query
+        action = query.data
+        user_id = query.from_user.id
+
+        response = ""
+        if action == "list_set_busy":
+            updated = self._set_user_busy_status(user_id, True)
+            if not updated:
+                await query.answer("Please /optin before marking yourself busy.", show_alert=True)
+                return
+            response = "Marked you as busy."
+        elif action == "list_set_available":
+            updated = self._set_user_busy_status(user_id, False)
+            if not updated:
+                await query.answer("Please /optin before updating your status.", show_alert=True)
+                return
+            response = "Marked you as unoccupied."
+        elif action == "list_refresh":
+            response = "Lists refreshed."
         else:
-            message = f"🎉 People available to hang out this week ({week}):\n\n"
-            
-            for i, participant in enumerate(participants, 1):
-                username = f"@{participant['username']}" if participant['username'] else participant['first_name']
-                message += f"{i}. {username}\n"
-            
-            message += f"\n👥 Total: {len(participants)} people\n"
-            message += "\nReach out to them and plan something fun!"
-        
-        await update.message.reply_text(message)
+            response = "Unknown action."
+
+        message = self._format_participant_lists_message()
+        reply_markup = self._build_participant_list_keyboard(user_id)
+
+        try:
+            await query.edit_message_text(message, reply_markup=reply_markup)
+        except Exception as exc:
+            logger.warning("Failed to edit message for list callback: %s", exc)
+
+        await query.answer(response or "Done.")
     
     async def send_weekly_reminder(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send weekly reminder to all active users."""
@@ -427,18 +569,7 @@ class SocialChatBot:
             return
         
         logger.info(f"Sending participant list to {len(participants)} users for week {week}")
-        
-        # Create participant list message
-        list_message = f"🎊 Your Social Matches for Week {week}!\n\n"
-        list_message += "Here's everyone who wants to hang out this week:\n\n"
-        
-        for i, participant in enumerate(participants, 1):
-            username = f"@{participant['username']}" if participant['username'] else participant['first_name']
-            list_message += f"{i}. {username}\n"
-        
-        list_message += f"\n👥 Total: {len(participants)} people\n\n"
-        list_message += "Reach out and plan something fun! 🎉\n"
-        list_message += "Have a great week! 😊"
+        list_message = self._format_participant_lists_message()
         
         # Send to all participants
         sent_count = 0
@@ -446,7 +577,8 @@ class SocialChatBot:
             try:
                 await bot.send_message(
                     chat_id=participant['chat_id'],
-                    text=list_message
+                    text=list_message,
+                    reply_markup=self._build_participant_list_keyboard(participant['user_id'])
                 )
                 sent_count += 1
             except Exception as e:
@@ -519,6 +651,7 @@ class SocialChatBot:
         self.application.add_handler(CommandHandler("admin_matching", self.admin_start_matching_command))
         self.application.add_handler(CommandHandler("admin_status", self.admin_status_command))
         self.application.add_handler(CommandHandler("admin_reset", self.admin_reset_week_command))
+        self.application.add_handler(CallbackQueryHandler(self.list_callback_handler, pattern="^list_"))
         
         # Schedule weekly reminder and matching
         reminder_day = self.config.get('reminder_day', 0)  # Monday by default

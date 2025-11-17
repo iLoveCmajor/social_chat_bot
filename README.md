@@ -135,7 +135,7 @@ Once the bot is running, users can interact with it using these commands:
 - `/optin` - Opt in for this week's social matching
 - `/optout` - Opt out for this week
 - `/status` - Check your current participation status
-- `/list` - View all participants for this week
+- `/list` - View all participants for this week, with separate unoccupied/occupied lists and inline buttons to mark yourself busy or refresh
 - `/help` - Show help message with all commands
 
 **Admin Commands** (restricted to IDs in `admin_ids` / `ADMIN_IDS`):
