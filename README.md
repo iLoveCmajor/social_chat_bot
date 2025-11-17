@@ -9,6 +9,7 @@ A Telegram bot that helps people find weekly social partners. The bot sends week
 - 📅 **Weekly Reminders**: Automatically sends reminders at the start of each week
 - ✅ **Opt-in/Opt-out System**: Users can choose to participate each week
 - 👥 **Participant Matching**: All opted-in users receive a list of others who want to hang out
+- 💘 **Mutual Likes & Matches**: Like other participants, see mutual matches, and view their availability status
 - 💾 **Persistent Storage**: SQLite database tracks user preferences and weekly participation
 - 🔔 **Automated Scheduling**: Uses APScheduler for reliable weekly notifications
 - 🛡️ **Admin Controls**: Manually trigger reminders, matching, reset weeks, and monitor status
@@ -135,7 +136,7 @@ Once the bot is running, users can interact with it using these commands:
 - `/optin` - Opt in for this week's social matching
 - `/optout` - Opt out for this week
 - `/status` - Check your current participation status
-- `/list` - View all participants for this week, with separate unoccupied/occupied lists and inline buttons to mark yourself busy or refresh
+- `/list` - Open the matching dashboard: like/unlike other participants, view mutual matches (with busy indicators), and toggle your availability
 - `/help` - Show help message with all commands
 
 **Admin Commands** (restricted to IDs in `admin_ids` / `ADMIN_IDS`):
@@ -160,21 +161,24 @@ Once the bot is running, users can interact with it using these commands:
    I'll send you a list of other participants when the week starts.
    ```
 
-3. **Monday 12:00 PM**: Bot sends participant list to all opted-in users
+3. **Monday 12:00 PM**: Bot sends the matching dashboard to all opted-in users
    ```
-   🎊 Your Social Matches for Week 2025-W46!
-   Here's everyone who wants to hang out this week:
-   1. @alice
-   2. @bob
-   3. @charlie
-   👥 Total: 3 people
+   🎯 Matching Phase (2025-W46)
+   Tap ❤️ to like someone. Mutual likes appear under "Your matches" with 🟢/🔴 showing availability.
+   👥 Opted-in participants:
+   1. @alice — ♡ Not liked
+   2. @bob — ❤️ Liked
+
+   💌 Your matches:
+   1. 🟢 You ❤️ 🔴 @bob
    ```
 
 ## Database
 
 The bot uses SQLite to store:
 - User information (user_id, username, first_name, chat_id)
-- Weekly participation records (who opted in/out each week)
+- Weekly participation records (who opted in/out each week and their busy status)
+- Weekly likes (who liked whom) to determine mutual matches
 
 Database file: `bot_data.db` (created automatically on first run)
 

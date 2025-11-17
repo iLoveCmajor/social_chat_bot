@@ -7,7 +7,7 @@ Helps people find partners to hang out by matching weekly participants.
 import os
 import json
 import logging
-from datetime import datetime, time
+from datetime import datetime
 from typing import Dict, Set, List, Optional
 import sqlite3
 from pathlib import Path
@@ -18,8 +18,6 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
-    MessageHandler,
-    filters,
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -103,6 +101,17 @@ class SocialChatBot:
         if 'is_busy' not in columns:
             cursor.execute('ALTER TABLE weekly_participation ADD COLUMN is_busy INTEGER DEFAULT 0')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS weekly_likes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                target_user_id INTEGER,
+                week_year TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, target_user_id, week_year)
+            )
+        ''')
+
         conn.commit()
         conn.close()
         logger.info("Database initialized successfully")
@@ -132,9 +141,28 @@ class SocialChatBot:
         cursor = conn.cursor()
         
         cursor.execute('''
-            INSERT OR REPLACE INTO weekly_participation (user_id, week_year, opted_in)
+            INSERT INTO weekly_participation (user_id, week_year, opted_in)
             VALUES (?, ?, ?)
+            ON CONFLICT(user_id, week_year)
+            DO UPDATE SET opted_in = excluded.opted_in
         ''', (user_id, week, 1 if opted_in else 0))
+
+        if not opted_in:
+            cursor.execute(
+                '''
+                UPDATE weekly_participation
+                SET is_busy = 0
+                WHERE user_id = ? AND week_year = ?
+                ''',
+                (user_id, week)
+            )
+            cursor.execute(
+                '''
+                DELETE FROM weekly_likes
+                WHERE week_year = ? AND (user_id = ? OR target_user_id = ?)
+                ''',
+                (week, user_id, user_id)
+            )
         
         conn.commit()
         conn.close()
@@ -165,19 +193,21 @@ class SocialChatBot:
         conn.close()
         return participants
 
-    def _get_participants_grouped(self) -> Dict[str, List[Dict]]:
-        """Return participants grouped into unoccupied and occupied lists."""
-        participants = self._get_participants()
-        grouped = {
-            'unoccupied': [],
-            'occupied': []
-        }
-
-        for participant in participants:
-            key = 'occupied' if participant['is_busy'] else 'unoccupied'
-            grouped[key].append(participant)
-
-        return grouped
+    def _is_user_opted_in(self, user_id: int) -> bool:
+        """Return True if the user is opted in for the current week."""
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT opted_in FROM weekly_participation
+            WHERE user_id = ? AND week_year = ?
+            ''',
+            (user_id, week)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        return bool(row and row[0] == 1)
 
     def _get_user_busy_status(self, user_id: int) -> Optional[bool]:
         """Return whether the user is marked busy for the week."""
@@ -226,45 +256,216 @@ class SocialChatBot:
         conn.close()
         return True
 
-    def _format_participant_lists_message(self) -> str:
-        """Build a message showing unoccupied and occupied participants."""
-        grouped = self._get_participants_grouped()
+    def _get_user_likes(self, user_id: int) -> Set[int]:
+        """Return a set of user IDs liked by the user this week."""
         week = self._get_current_week()
-        header = f"🎉 People available to hang out this week ({week}):\n\n"
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT target_user_id FROM weekly_likes
+            WHERE user_id = ? AND week_year = ?
+            ''',
+            (user_id, week)
+        )
+        liked = {row[0] for row in cursor.fetchall()}
+        conn.close()
+        return liked
 
-        def format_section(title: str, entries: List[Dict]) -> str:
-            if not entries:
-                return f"{title}:\n- None yet\n\n"
-            lines = []
-            for idx, participant in enumerate(entries, 1):
-                username = f"@{participant['username']}" if participant['username'] else participant['first_name']
-                lines.append(f"{idx}. {username}")
-            return f"{title}:\n" + "\n".join(lines) + "\n\n"
+    def _set_like_status(self, user_id: int, target_user_id: int, like: bool) -> bool:
+        """Like or unlike another user. Returns True if applied."""
+        if user_id == target_user_id:
+            return False
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
 
-        message = header
-        message += format_section("🟢 Unoccupied", grouped['unoccupied'])
-        message += format_section("🔴 Occupied", grouped['occupied'])
+        cursor.execute(
+            '''
+            SELECT 1 FROM weekly_participation
+            WHERE user_id = ? AND week_year = ? AND opted_in = 1
+            ''',
+            (user_id, week)
+        )
+        user_opted_in = cursor.fetchone()
 
-        total = len(grouped['unoccupied']) + len(grouped['occupied'])
-        if total:
-            message += f"👥 Total opted in: {total}\n\n"
+        cursor.execute(
+            '''
+            SELECT 1 FROM weekly_participation
+            WHERE user_id = ? AND week_year = ? AND opted_in = 1
+            ''',
+            (target_user_id, week)
+        )
+        target_opted_in = cursor.fetchone()
 
-        if not grouped['unoccupied'] and not grouped['occupied']:
-            message += "No one has opted in yet. Use /optin to join the fun!\n\n"
+        if not user_opted_in or not target_opted_in:
+            conn.close()
+            return False
 
-        message += "Use the buttons below to update your status or refresh the lists."
-        return message
+        if like:
+            cursor.execute(
+                '''
+                INSERT OR IGNORE INTO weekly_likes (user_id, target_user_id, week_year)
+                VALUES (?, ?, ?)
+                ''',
+                (user_id, target_user_id, week)
+            )
+        else:
+            cursor.execute(
+                '''
+                DELETE FROM weekly_likes
+                WHERE user_id = ? AND target_user_id = ? AND week_year = ?
+                ''',
+                (user_id, target_user_id, week)
+            )
 
-    def _build_participant_list_keyboard(self, user_id: int) -> InlineKeyboardMarkup:
-        """Return the inline keyboard for list interactions."""
+        conn.commit()
+        conn.close()
+        return True
+
+    def _like_all_participants(self, user_id: int) -> int:
+        """Like all other opted-in participants. Returns number of likes added."""
+        if not self._is_user_opted_in(user_id):
+            return 0
+
+        targets = [p['user_id'] for p in self._get_participants() if p['user_id'] != user_id]
+        if not targets:
+            return 0
+
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.executemany(
+            '''
+            INSERT OR IGNORE INTO weekly_likes (user_id, target_user_id, week_year)
+            VALUES (?, ?, ?)
+            ''',
+            [(user_id, target_id, week) for target_id in targets]
+        )
+        conn.commit()
+        changes = conn.total_changes
+        conn.close()
+        return changes
+
+    def _get_mutual_matches(self, user_id: int) -> List[Dict]:
+        """Return participant records for users who mutually liked each other."""
+        week = self._get_current_week()
+        participants = {p['user_id']: p for p in self._get_participants()}
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT DISTINCT wl1.target_user_id
+            FROM weekly_likes wl1
+            JOIN weekly_likes wl2
+                ON wl1.target_user_id = wl2.user_id
+                AND wl1.user_id = wl2.target_user_id
+                AND wl1.week_year = wl2.week_year
+            WHERE wl1.user_id = ? AND wl1.week_year = ?
+            ''',
+            (user_id, week)
+        )
+        match_ids = {row[0] for row in cursor.fetchall()}
+        conn.close()
+
+        matches = []
+        for target_id in match_ids:
+            participant = participants.get(target_id)
+            if participant:
+                matches.append(participant)
+        return matches
+
+    def _get_display_name(self, participant: Dict) -> str:
+        username = participant.get('username')
+        if username:
+            return f"@{username}"
+        return participant.get('first_name') or "Unknown"
+
+    def _build_matching_phase_message(self, user_id: int) -> str:
+        """Construct the matching view text for the user."""
+        week = self._get_current_week()
+        if not self._is_user_opted_in(user_id):
+            return (
+                f"🎯 Matching Phase ({week})\n\n"
+                "You're currently not opted in for this week. Use /optin to join the matching phase."
+            )
+
+        participants = self._get_participants()
+        others = [p for p in participants if p['user_id'] != user_id]
+        likes = self._get_user_likes(user_id)
+        matches = self._get_mutual_matches(user_id)
         busy_status = self._get_user_busy_status(user_id)
+        self_icon = '🔴' if busy_status else '🟢'
+
+        message = [f"🎯 Matching Phase ({week})", ""]
+        message.append(
+            "Tap ❤️ to like someone. If they like you back, they'll appear in your matches."
+        )
+        message.append("Use the busy toggle to let others know if you're occupied.")
+        message.append("")
+
+        message.append("👥 Opted-in participants:")
+        if not others:
+            message.append("- No other participants yet. Invite friends to opt in!")
+        else:
+            for idx, participant in enumerate(others, 1):
+                name = self._get_display_name(participant)
+                liked = "❤️ Liked" if participant['user_id'] in likes else "♡ Not liked"
+                message.append(f"{idx}. {name} — {liked}")
+
+        message.append("")
+        message.append("💌 Your matches:")
+        if not matches:
+            message.append("- No matches yet. Keep liking!")
+        else:
+            for idx, match in enumerate(matches, 1):
+                other_icon = '🔴' if match.get('is_busy') else '🟢'
+                name = self._get_display_name(match)
+                message.append(f"{idx}. {self_icon} You ❤️ {other_icon} {name}")
+
+        message.append("")
+        message.append("Legend: 🟢 Unoccupied · 🔴 Busy")
+        return "\n".join(message)
+
+    def _build_matching_keyboard(self, user_id: int) -> InlineKeyboardMarkup:
+        """Return inline buttons for liking/unliking and status controls."""
+        busy_status = self._get_user_busy_status(user_id)
+        if busy_status is None:
+            return InlineKeyboardMarkup([
+                [InlineKeyboardButton("Refresh 🔄", callback_data="list_refresh")]
+            ])
+
+        participants = [p for p in self._get_participants() if p['user_id'] != user_id]
+        likes = self._get_user_likes(user_id)
         buttons: List[List[InlineKeyboardButton]] = []
 
-        if busy_status is True:
+        for participant in participants:
+            name = self._get_display_name(participant)
+            if participant['user_id'] in likes:
+                buttons.append([
+                    InlineKeyboardButton(
+                        f"💔 Unlike {name}",
+                        callback_data=f"list_unlike_{participant['user_id']}"
+                    )
+                ])
+            else:
+                buttons.append([
+                    InlineKeyboardButton(
+                        f"❤️ Like {name}",
+                        callback_data=f"list_like_{participant['user_id']}"
+                    )
+                ])
+
+        if participants:
+            buttons.append([
+                InlineKeyboardButton("❤️ Like everyone", callback_data="list_like_all")
+            ])
+
+        if busy_status:
             buttons.append([
                 InlineKeyboardButton("Mark me unoccupied", callback_data="list_set_available")
             ])
-        elif busy_status is False:
+        else:
             buttons.append([
                 InlineKeyboardButton("Mark me busy", callback_data="list_set_busy")
             ])
@@ -272,10 +473,6 @@ class SocialChatBot:
         buttons.append([
             InlineKeyboardButton("Refresh 🔄", callback_data="list_refresh")
         ])
-
-        if busy_status is None:
-            # Only refresh is meaningful if the user is not opted in yet
-            return InlineKeyboardMarkup(buttons[-1:])
 
         return InlineKeyboardMarkup(buttons)
     
@@ -327,6 +524,10 @@ class SocialChatBot:
             (week,)
         )
         deleted = cursor.rowcount
+        cursor.execute(
+            'DELETE FROM weekly_likes WHERE week_year = ?',
+            (week,)
+        )
         conn.commit()
         conn.close()
         return deleted
@@ -486,8 +687,8 @@ class SocialChatBot:
     async def list_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /list command - show all participants for this week."""
         user_id = update.effective_user.id
-        message = self._format_participant_lists_message()
-        reply_markup = self._build_participant_list_keyboard(user_id)
+        message = self._build_matching_phase_message(user_id)
+        reply_markup = self._build_matching_keyboard(user_id)
 
         await update.message.reply_text(message, reply_markup=reply_markup)
 
@@ -498,7 +699,25 @@ class SocialChatBot:
         user_id = query.from_user.id
 
         response = ""
-        if action == "list_set_busy":
+        if action == "list_like_all":
+            liked_count = self._like_all_participants(user_id)
+            if not liked_count:
+                await query.answer("No participants to like or you're not opted in.", show_alert=True)
+                return
+            response = "Liked everyone!"
+        elif action.startswith("list_like_"):
+            target_id = int(action.split('_')[-1])
+            if not self._set_like_status(user_id, target_id, True):
+                await query.answer("Both users must be opted in before liking.", show_alert=True)
+                return
+            response = "Liked!"
+        elif action.startswith("list_unlike_"):
+            target_id = int(action.split('_')[-1])
+            if not self._set_like_status(user_id, target_id, False):
+                await query.answer("Could not update like.", show_alert=True)
+                return
+            response = "Removed like."
+        elif action == "list_set_busy":
             updated = self._set_user_busy_status(user_id, True)
             if not updated:
                 await query.answer("Please /optin before marking yourself busy.", show_alert=True)
@@ -515,8 +734,8 @@ class SocialChatBot:
         else:
             response = "Unknown action."
 
-        message = self._format_participant_lists_message()
-        reply_markup = self._build_participant_list_keyboard(user_id)
+        message = self._build_matching_phase_message(user_id)
+        reply_markup = self._build_matching_keyboard(user_id)
 
         try:
             await query.edit_message_text(message, reply_markup=reply_markup)
@@ -569,7 +788,6 @@ class SocialChatBot:
             return
         
         logger.info(f"Sending participant list to {len(participants)} users for week {week}")
-        list_message = self._format_participant_lists_message()
         
         # Send to all participants
         sent_count = 0
@@ -577,8 +795,8 @@ class SocialChatBot:
             try:
                 await bot.send_message(
                     chat_id=participant['chat_id'],
-                    text=list_message,
-                    reply_markup=self._build_participant_list_keyboard(participant['user_id'])
+                    text=self._build_matching_phase_message(participant['user_id']),
+                    reply_markup=self._build_matching_keyboard(participant['user_id'])
                 )
                 sent_count += 1
             except Exception as e:
