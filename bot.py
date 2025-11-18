@@ -7,7 +7,7 @@ Helps people find partners to hang out by matching weekly participants.
 import os
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Set, List, Optional
 import sqlite3
 from pathlib import Path
@@ -120,6 +120,18 @@ class SocialChatBot:
         """Get current week identifier (year-week)."""
         now = datetime.now()
         return f"{now.year}-W{now.isocalendar()[1]:02d}"
+
+    def _get_current_week_range(self):
+        """Return date objects representing the Monday-Sunday range for this week."""
+        today = datetime.now().date()
+        start = today - timedelta(days=today.weekday())
+        end = start + timedelta(days=6)
+        return start, end
+
+    def _get_current_week_label(self) -> str:
+        """Return formatted week range as ddmmyyyy - ddmmyyyy."""
+        start, end = self._get_current_week_range()
+        return f"{start.strftime('%d/%m/%Y')} - {end.strftime('%d/%m/%Y')}"
     
     def _add_user(self, user_id: int, username: str, first_name: str, chat_id: int):
         """Add or update user in database."""
@@ -137,6 +149,7 @@ class SocialChatBot:
     def _set_user_participation(self, user_id: int, opted_in: bool):
         """Set user's participation status for current week."""
         week = self._get_current_week()
+        week_label = self._get_current_week_label()
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -383,10 +396,10 @@ class SocialChatBot:
 
     def _build_matching_phase_message(self, user_id: int) -> str:
         """Construct the matching view text for the user."""
-        week = self._get_current_week()
+        week_label = self._get_current_week_label()
         if not self._is_user_opted_in(user_id):
             return (
-                f"🎯 Matching Phase ({week})\n\n"
+                f"🎯 Matching Phase ({week_label})\n\n"
                 "You're currently not opted in for this week. Use /optin to join the matching phase."
             )
 
@@ -397,7 +410,7 @@ class SocialChatBot:
         busy_status = self._get_user_busy_status(user_id)
         self_icon = '🔴' if busy_status else '🟢'
 
-        message = [f"🎯 Matching Phase ({week})", ""]
+        message = [f"🎯 Matching Phase ({week_label})", ""]
         message.append(
             "Tap ❤️ to like someone. If they like you back, they'll appear in your matches."
         )
@@ -567,6 +580,7 @@ class SocialChatBot:
         pending = max(active_users - responded, 0)
         return {
             'week': week,
+            'week_range': self._get_current_week_label(),
             'active_users': active_users,
             'opted_in': opted_in,
             'opted_out': opted_out,
@@ -659,6 +673,7 @@ class SocialChatBot:
         """Handle /status command."""
         user = update.effective_user
         week = self._get_current_week()
+        week_label = self._get_current_week_label()
         
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -677,7 +692,7 @@ class SocialChatBot:
             status = "❌ You're currently opted out for this week."
         
         message = (
-            f"📊 Your Status (Week {week}):\n\n"
+            f"📊 Your Status ({week_label}):\n\n"
             f"{status}\n\n"
             "Use /optin or /optout to change your status."
         )
@@ -754,7 +769,7 @@ class SocialChatBot:
         
         message = (
             f"🔔 Weekly Social Reminder!\n\n"
-            f"It's a new week ({week})! 🎉\n\n"
+            f"It's a new week ({week_label})! 🎉\n\n"
             "Would you like to be social this week?\n\n"
             "If yes, use /optin to join!\n"
             "You'll get a list of others who want to hang out too.\n\n"
@@ -833,7 +848,7 @@ class SocialChatBot:
         
         status = self._get_weekly_status()
         message = (
-            f"📊 Weekly Status ({status['week']}):\n"
+            f"📊 Weekly Status ({status['week_range']}):\n"
             f"• Active users: {status['active_users']}\n"
             f"• Opted in: {status['opted_in']}\n"
             f"• Opted out: {status['opted_out']}\n"
@@ -848,9 +863,9 @@ class SocialChatBot:
             return
         
         deleted = self._reset_current_week_participation()
-        week = self._get_current_week()
+        week_label = self._get_current_week_label()
         await update.message.reply_text(
-            f"🔄 Cleared {deleted} participation record(s) for week {week}."
+            f"🔄 Cleared {deleted} participation record(s) for week {week_label}."
         )
     
     def run(self):

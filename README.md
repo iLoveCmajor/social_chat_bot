@@ -151,7 +151,7 @@ Once the bot is running, users can interact with it using these commands:
 1. **Monday 9:00 AM**: Bot sends reminder
    ```
    🔔 Weekly Social Reminder!
-   It's a new week (2025-W46)! 🎉
+   It's a new week (06/01/2025 - 12/01/2025)! 🎉
    Would you like to be social this week?
    ```
 
@@ -163,7 +163,7 @@ Once the bot is running, users can interact with it using these commands:
 
 3. **Monday 12:00 PM**: Bot sends the matching dashboard to all opted-in users
    ```
-   🎯 Matching Phase (2025-W46)
+   🎯 Matching Phase (06/01/2025 - 12/01/2025)
    Tap ❤️ to like someone. Mutual likes appear under "Your matches" with 🟢/🔴 showing availability.
    👥 Opted-in participants:
    1. @alice — ♡ Not liked
