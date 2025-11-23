@@ -21,6 +21,7 @@ from telegram.ext import (
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from messages import TEXT, BUTTONS, RESPONSES, ALERTS
 
 # Configure logging
 logging.basicConfig(
@@ -149,7 +150,6 @@ class SocialChatBot:
     def _set_user_participation(self, user_id: int, opted_in: bool):
         """Set user's participation status for current week."""
         week = self._get_current_week()
-        week_label = self._get_current_week_label()
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -392,15 +392,15 @@ class SocialChatBot:
         username = participant.get('username')
         if username:
             return f"@{username}"
-        return participant.get('first_name') or "Unknown"
+        return participant.get('first_name') or TEXT["unknown_user"]
 
     def _build_matching_phase_message(self, user_id: int) -> str:
         """Construct the matching view text for the user."""
         week_label = self._get_current_week_label()
         if not self._is_user_opted_in(user_id):
             return (
-                f"🎯 Matching Phase ({week_label})\n\n"
-                "You're currently not opted in for this week. Use /optin to join the matching phase."
+                f"{TEXT['matching_phase_title'].format(week_label=week_label)}\n\n"
+                f"{TEXT['matching_not_opted']}"
             )
 
         participants = self._get_participants()
@@ -410,34 +410,50 @@ class SocialChatBot:
         busy_status = self._get_user_busy_status(user_id)
         self_icon = '🔴' if busy_status else '🟢'
 
-        message = [f"🎯 Matching Phase ({week_label})", ""]
-        message.append(
-            "Tap ❤️ to like someone. If they like you back, they'll appear in your matches."
-        )
-        message.append("Use the busy toggle to let others know if you're occupied.")
+        message = [TEXT['matching_phase_title'].format(week_label=week_label), ""]
+        message.append(TEXT["matching_instructions"])
+        message.append(TEXT["matching_busy_hint"])
         message.append("")
 
-        message.append("👥 Opted-in participants:")
+        message.append(TEXT["matching_participants_header"])
         if not others:
-            message.append("- No other participants yet. Invite friends to opt in!")
+            message.append(TEXT["matching_no_participants"])
         else:
             for idx, participant in enumerate(others, 1):
                 name = self._get_display_name(participant)
-                liked = "❤️ Liked" if participant['user_id'] in likes else "♡ Not liked"
-                message.append(f"{idx}. {name} — {liked}")
+                liked_state = (
+                    TEXT["matching_liked"] if participant['user_id'] in likes
+                    else TEXT["matching_not_liked"]
+                )
+                message.append(
+                    TEXT["matching_participant_line"].format(
+                        idx=idx,
+                        name=name,
+                        state=liked_state
+                    )
+                )
 
         message.append("")
-        message.append("💌 Your matches:")
+        message.append(TEXT["matching_matches_header"])
         if not matches:
-            message.append("- No matches yet. Keep liking!")
+            message.append(TEXT["matching_no_matches"])
         else:
+            you_label = TEXT["matching_you_label"]
             for idx, match in enumerate(matches, 1):
                 other_icon = '🔴' if match.get('is_busy') else '🟢'
                 name = self._get_display_name(match)
-                message.append(f"{idx}. {self_icon} You ❤️ {other_icon} {name}")
+                message.append(
+                    TEXT["matching_match_line"].format(
+                        idx=idx,
+                        self_icon=self_icon,
+                        you_label=you_label,
+                        other_icon=other_icon,
+                        name=name
+                    )
+                )
 
         message.append("")
-        message.append("Legend: 🟢 Unoccupied · 🔴 Busy")
+        message.append(TEXT["matching_legend"])
         return "\n".join(message)
 
     def _build_matching_keyboard(self, user_id: int) -> InlineKeyboardMarkup:
@@ -445,7 +461,7 @@ class SocialChatBot:
         busy_status = self._get_user_busy_status(user_id)
         if busy_status is None:
             return InlineKeyboardMarkup([
-                [InlineKeyboardButton("Refresh 🔄", callback_data="list_refresh")]
+                [InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")]
             ])
 
         participants = [p for p in self._get_participants() if p['user_id'] != user_id]
@@ -457,34 +473,34 @@ class SocialChatBot:
             if participant['user_id'] in likes:
                 buttons.append([
                     InlineKeyboardButton(
-                        f"💔 Unlike {name}",
+                        BUTTONS["unlike"].format(name=name),
                         callback_data=f"list_unlike_{participant['user_id']}"
                     )
                 ])
             else:
                 buttons.append([
                     InlineKeyboardButton(
-                        f"❤️ Like {name}",
+                        BUTTONS["like"].format(name=name),
                         callback_data=f"list_like_{participant['user_id']}"
                     )
                 ])
 
         if participants:
             buttons.append([
-                InlineKeyboardButton("❤️ Like everyone", callback_data="list_like_all")
+                InlineKeyboardButton(BUTTONS["like_all"], callback_data="list_like_all")
             ])
 
         if busy_status:
             buttons.append([
-                InlineKeyboardButton("Mark me unoccupied", callback_data="list_set_available")
+                InlineKeyboardButton(BUTTONS["mark_available"], callback_data="list_set_available")
             ])
         else:
             buttons.append([
-                InlineKeyboardButton("Mark me busy", callback_data="list_set_busy")
+                InlineKeyboardButton(BUTTONS["mark_busy"], callback_data="list_set_busy")
             ])
 
         buttons.append([
-            InlineKeyboardButton("Refresh 🔄", callback_data="list_refresh")
+            InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")
         ])
 
         return InlineKeyboardMarkup(buttons)
@@ -524,7 +540,7 @@ class SocialChatBot:
 
         logger.warning("Unauthorized admin command attempt by user_id=%s", user.id if user else "unknown")
         if update.message:
-            await update.message.reply_text("⛔ This command is restricted to admins.")
+            await update.message.reply_text(TEXT["admin_only"])
         return False
 
     def _reset_current_week_participation(self) -> int:
@@ -603,36 +619,13 @@ class SocialChatBot:
         # Add user to database
         self._add_user(user.id, user.username, user.first_name, chat_id)
         
-        welcome_message = (
-            f"👋 Hello {user.first_name}!\n\n"
-            "Welcome to the Social Chat Bot! 🎉\n\n"
-            "This bot helps you find people to hang out with each week.\n\n"
-            "📅 How it works:\n"
-            "• Every week, I'll ask if you want to be social\n"
-            "• If you opt in, you'll get a list of others who also want to hang out\n"
-            "• Connect with them and have fun!\n\n"
-            "Commands:\n"
-            "/optin - Opt in for this week's social matching\n"
-            "/optout - Opt out for this week\n"
-            "/status - Check your current status\n"
-            "/list - See who's available this week\n"
-            "/help - Show this message again"
-        )
+        welcome_message = TEXT["welcome"].format(first_name=user.first_name)
         
         await update.message.reply_text(welcome_message)
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command."""
-        help_message = (
-            "🤖 Social Chat Bot Commands:\n\n"
-            "/start - Start the bot and register\n"
-            "/optin - Opt in for this week's social matching\n"
-            "/optout - Opt out for this week\n"
-            "/status - Check your current participation status\n"
-            "/list - See who's available to hang out this week\n"
-            "/help - Show this help message\n\n"
-            "You'll receive weekly reminders to participate!"
-        )
+        help_message = TEXT["help"]
         
         await update.message.reply_text(help_message)
     
@@ -647,11 +640,7 @@ class SocialChatBot:
         # Set participation
         self._set_user_participation(user.id, True)
         
-        message = (
-            "✅ Great! You're in for this week!\n\n"
-            "I'll send you a list of other participants when the week starts.\n"
-            "Use /list to see who's already signed up."
-        )
+        message = TEXT["optin_confirmation"]
         
         await update.message.reply_text(message)
     
@@ -662,10 +651,7 @@ class SocialChatBot:
         # Set participation to false
         self._set_user_participation(user.id, False)
         
-        message = (
-            "👋 No problem! You've opted out for this week.\n\n"
-            "You can use /optin anytime to join again!"
-        )
+        message = TEXT["optout_confirmation"]
         
         await update.message.reply_text(message)
     
@@ -673,6 +659,7 @@ class SocialChatBot:
         """Handle /status command."""
         user = update.effective_user
         week = self._get_current_week()
+        week_label = self._get_current_week_label()
         week_label = self._get_current_week_label()
         
         conn = sqlite3.connect(self.db_path)
@@ -687,14 +674,13 @@ class SocialChatBot:
         conn.close()
         
         if result and result[0] == 1:
-            status = "✅ You're IN for this week's social matching!"
+            status_text = TEXT["status_in"]
         else:
-            status = "❌ You're currently opted out for this week."
+            status_text = TEXT["status_out"]
         
-        message = (
-            f"📊 Your Status ({week_label}):\n\n"
-            f"{status}\n\n"
-            "Use /optin or /optout to change your status."
+        message = TEXT["status_summary"].format(
+            week_label=week_label,
+            status=status_text
         )
         
         await update.message.reply_text(message)
@@ -717,37 +703,37 @@ class SocialChatBot:
         if action == "list_like_all":
             liked_count = self._like_all_participants(user_id)
             if not liked_count:
-                await query.answer("No participants to like or you're not opted in.", show_alert=True)
+                await query.answer(ALERTS["like_all_unavailable"], show_alert=True)
                 return
-            response = "Liked everyone!"
+            response = RESPONSES["like_all_success"]
         elif action.startswith("list_like_"):
             target_id = int(action.split('_')[-1])
             if not self._set_like_status(user_id, target_id, True):
-                await query.answer("Both users must be opted in before liking.", show_alert=True)
+                await query.answer(ALERTS["like_requires_optin"], show_alert=True)
                 return
-            response = "Liked!"
+            response = RESPONSES["like_success"]
         elif action.startswith("list_unlike_"):
             target_id = int(action.split('_')[-1])
             if not self._set_like_status(user_id, target_id, False):
-                await query.answer("Could not update like.", show_alert=True)
+                await query.answer(ALERTS["unlike_failed"], show_alert=True)
                 return
-            response = "Removed like."
+            response = RESPONSES["unlike_success"]
         elif action == "list_set_busy":
             updated = self._set_user_busy_status(user_id, True)
             if not updated:
-                await query.answer("Please /optin before marking yourself busy.", show_alert=True)
+                await query.answer(ALERTS["busy_requires_optin"], show_alert=True)
                 return
-            response = "Marked you as busy."
+            response = RESPONSES["busy_on"]
         elif action == "list_set_available":
             updated = self._set_user_busy_status(user_id, False)
             if not updated:
-                await query.answer("Please /optin before updating your status.", show_alert=True)
+                await query.answer(ALERTS["available_requires_optin"], show_alert=True)
                 return
-            response = "Marked you as unoccupied."
+            response = RESPONSES["busy_off"]
         elif action == "list_refresh":
-            response = "Lists refreshed."
+            response = RESPONSES["refresh"]
         else:
-            response = "Unknown action."
+            response = RESPONSES["unknown"]
 
         message = self._build_matching_phase_message(user_id)
         reply_markup = self._build_matching_keyboard(user_id)
@@ -757,27 +743,18 @@ class SocialChatBot:
         except Exception as exc:
             logger.warning("Failed to edit message for list callback: %s", exc)
 
-        await query.answer(response or "Done.")
+        await query.answer(response or RESPONSES["done"])
     
     async def send_weekly_reminder(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send weekly reminder to all active users."""
         users = self._get_all_active_users()
         week = self._get_current_week()
+        week_label = self._get_current_week_label()
         bot = self._get_bot(context)
         
         logger.info(f"Sending weekly reminder to {len(users)} users for week {week}")
         
-        message = (
-            f"🔔 Weekly Social Reminder!\n\n"
-            f"It's a new week ({week_label})! 🎉\n\n"
-            "Would you like to be social this week?\n\n"
-            "If yes, use /optin to join!\n"
-            "You'll get a list of others who want to hang out too.\n\n"
-            "Commands:\n"
-            "/optin - I want to be social! ✅\n"
-            "/optout - Not this week ❌\n"
-            "/list - See who's already signed up"
-        )
+        message = TEXT["weekly_reminder"].format(week_label=week_label)
         
         sent_count = 0
         for user in users:
@@ -826,9 +803,9 @@ class SocialChatBot:
         
         sent = await self.send_weekly_reminder(context)
         if sent:
-            await update.message.reply_text(f"✅ Weekly reminder sent to {sent} active users.")
+            await update.message.reply_text(TEXT["admin_optin_sent"].format(count=sent))
         else:
-            await update.message.reply_text("⚠️ No active users found to notify.")
+            await update.message.reply_text(TEXT["admin_optin_none"])
 
     async def admin_start_matching_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Allow admins to manually trigger participant matching."""
@@ -837,9 +814,9 @@ class SocialChatBot:
         
         sent = await self.send_participant_list(context)
         if sent:
-            await update.message.reply_text(f"📬 Participant list sent to {sent} opted-in users.")
+            await update.message.reply_text(TEXT["admin_matching_sent"].format(count=sent))
         else:
-            await update.message.reply_text("ℹ️ There are no participants to send a list to this week.")
+            await update.message.reply_text(TEXT["admin_matching_none"])
 
     async def admin_status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show weekly stats to admins."""
@@ -847,12 +824,12 @@ class SocialChatBot:
             return
         
         status = self._get_weekly_status()
-        message = (
-            f"📊 Weekly Status ({status['week_range']}):\n"
-            f"• Active users: {status['active_users']}\n"
-            f"• Opted in: {status['opted_in']}\n"
-            f"• Opted out: {status['opted_out']}\n"
-            f"• No response yet: {status['pending']}"
+        message = TEXT["admin_status"].format(
+            week_label=status['week_range'],
+            active=status['active_users'],
+            opted_in=status['opted_in'],
+            opted_out=status['opted_out'],
+            pending=status['pending']
         )
         
         await update.message.reply_text(message)
@@ -865,7 +842,7 @@ class SocialChatBot:
         deleted = self._reset_current_week_participation()
         week_label = self._get_current_week_label()
         await update.message.reply_text(
-            f"🔄 Cleared {deleted} participation record(s) for week {week_label}."
+            TEXT["admin_reset"].format(count=deleted, week_label=week_label)
         )
     
     def run(self):
