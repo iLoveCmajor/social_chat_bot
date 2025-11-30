@@ -46,18 +46,19 @@ TEXT = {
     "matching_not_opted": (
         "You're currently not opted in for this week. Use /optin to join the matching phase."
     ),
-    "matching_instructions": "Tap ❤️ to like someone. If they like you back, they'll appear in your matches.",
-    "matching_busy_hint": "Use the busy toggle to let others know if you're occupied.",
+    "matching_instructions": "Everyone starts liked. Tap 💔 to remove someone or ❤️ to add them back before matching begins.",
     "matching_participants_header": "👥 Opted-in participants:",
     "matching_no_participants": "- No other participants yet. Invite friends to opt in!",
-    "matching_liked": "❤️ Liked",
-    "matching_not_liked": "♡ Not liked",
+    "matching_liked": "❤️ Interested",
+    "matching_disliked": "💔 Disliked",
+    "matching_not_liked": "♡ Pending",
     "matching_participant_line": "{idx}. {name} — {state}",
     "matching_matches_header": "💌 Your matches:",
-    "matching_no_matches": "- No matches yet. Keep liking!",
-    "matching_match_line": "{idx}. {self_icon} {you_label} ❤️ {other_icon} {name}",
+    "matching_no_matches": "Sorry, no match this week.",
+    "matching_waiting_notice": "Matching hasn't started yet. Keep liking people you're interested in!",
+    "matching_phase_locked": "✨ Matching for this week has started. Likes are frozen and your final match is below.",
+    "matching_match_line": "{idx}. {you_label} ❤️ {name}",
     "matching_you_label": "You",
-    "matching_legend": "Legend: 🟢 Unoccupied · 🔴 Busy",
     "unknown_user": "Unknown",
     "weekly_reminder": (
         "🔔 Weekly Social Reminder!\n\n"
@@ -86,20 +87,17 @@ TEXT = {
 }
 
 BUTTONS = {
-    "unlike": "💔 Unlike {name}",
-    "like": "❤️ Like {name}",
+    "unlike": "💔 Dislike {name}",
+    "like": "❤️ Undo dislike for {name}",
     "like_all": "❤️ Like everyone",
-    "mark_available": "Mark me unoccupied",
-    "mark_busy": "Mark me busy",
     "refresh": "Refresh 🔄",
 }
 
 RESPONSES = {
     "like_success": "Liked!",
-    "unlike_success": "Removed like.",
+    "dislike_success": "Marked as disliked.",
+    "dislike_removed": "Removed dislike.",
     "like_all_success": "Liked everyone!",
-    "busy_on": "Marked you as busy.",
-    "busy_off": "Marked you as unoccupied.",
     "refresh": "Lists refreshed.",
     "unknown": "Unknown action.",
     "done": "Done.",
@@ -107,8 +105,7 @@ RESPONSES = {
 
 ALERTS = {
     "like_requires_optin": "Both users must be opted in before liking.",
-    "unlike_failed": "Could not update like.",
-    "busy_requires_optin": "Please /optin before marking yourself busy.",
-    "available_requires_optin": "Please /optin before updating your status.",
+    "dislike_failed": "Could not update dislike.",
     "like_all_unavailable": "No participants to like or you're not opted in.",
+    "matching_locked": "Matching is already in progress this week. Likes are closed.",
 }

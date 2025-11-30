@@ -8,7 +8,7 @@ import os
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Set, List, Optional
+from typing import Dict, Set, List, Optional, Tuple
 import sqlite3
 from pathlib import Path
 
@@ -91,16 +91,9 @@ class SocialChatBot:
                 week_year TEXT,
                 opted_in INTEGER DEFAULT 0,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                is_busy INTEGER DEFAULT 0,
                 UNIQUE(user_id, week_year)
             )
         ''')
-
-        # Ensure legacy databases have the is_busy column
-        cursor.execute("PRAGMA table_info(weekly_participation)")
-        columns = [row[1] for row in cursor.fetchall()]
-        if 'is_busy' not in columns:
-            cursor.execute('ALTER TABLE weekly_participation ADD COLUMN is_busy INTEGER DEFAULT 0')
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS weekly_likes (
@@ -110,6 +103,25 @@ class SocialChatBot:
                 week_year TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(user_id, target_user_id, week_year)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS weekly_dislikes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                target_user_id INTEGER,
+                week_year TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, target_user_id, week_year)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS weekly_state (
+                week_year TEXT PRIMARY KEY,
+                is_matching_phase INTEGER DEFAULT 0,
+                matching_started_at DATETIME
             )
         ''')
 
@@ -163,15 +175,14 @@ class SocialChatBot:
         if not opted_in:
             cursor.execute(
                 '''
-                UPDATE weekly_participation
-                SET is_busy = 0
-                WHERE user_id = ? AND week_year = ?
+                DELETE FROM weekly_likes
+                WHERE week_year = ? AND (user_id = ? OR target_user_id = ?)
                 ''',
-                (user_id, week)
+                (week, user_id, user_id)
             )
             cursor.execute(
                 '''
-                DELETE FROM weekly_likes
+                DELETE FROM weekly_dislikes
                 WHERE week_year = ? AND (user_id = ? OR target_user_id = ?)
                 ''',
                 (week, user_id, user_id)
@@ -179,15 +190,18 @@ class SocialChatBot:
         
         conn.commit()
         conn.close()
+
+        if opted_in:
+            self._initialize_likes_for_user(user_id)
     
     def _get_participants(self) -> List[Dict]:
-        """Get all users who opted in for this week, including busy status."""
+        """Get all users who opted in for this week."""
         week = self._get_current_week()
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT u.user_id, u.username, u.first_name, u.chat_id, COALESCE(wp.is_busy, 0)
+            SELECT u.user_id, u.username, u.first_name, u.chat_id
             FROM users u
             JOIN weekly_participation wp ON u.user_id = wp.user_id
             WHERE wp.week_year = ? AND wp.opted_in = 1 AND u.is_active = 1
@@ -199,8 +213,7 @@ class SocialChatBot:
                 'user_id': row[0],
                 'username': row[1],
                 'first_name': row[2],
-                'chat_id': row[3],
-                'is_busy': bool(row[4])
+                'chat_id': row[3]
             })
         
         conn.close()
@@ -222,53 +235,6 @@ class SocialChatBot:
         conn.close()
         return bool(row and row[0] == 1)
 
-    def _get_user_busy_status(self, user_id: int) -> Optional[bool]:
-        """Return whether the user is marked busy for the week."""
-        week = self._get_current_week()
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            '''
-            SELECT opted_in, is_busy FROM weekly_participation
-            WHERE user_id = ? AND week_year = ?
-            ''',
-            (user_id, week)
-        )
-        row = cursor.fetchone()
-        conn.close()
-        if not row or row[0] != 1:
-            return None
-        return bool(row[1])
-
-    def _set_user_busy_status(self, user_id: int, busy: bool) -> bool:
-        """Update busy status for an opted-in user. Returns True if updated."""
-        week = self._get_current_week()
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            '''
-            SELECT id FROM weekly_participation
-            WHERE user_id = ? AND week_year = ? AND opted_in = 1
-            ''',
-            (user_id, week)
-        )
-        exists = cursor.fetchone()
-        if not exists:
-            conn.close()
-            return False
-
-        cursor.execute(
-            '''
-            UPDATE weekly_participation
-            SET is_busy = ?
-            WHERE user_id = ? AND week_year = ?
-            ''',
-            (1 if busy else 0, user_id, week)
-        )
-        conn.commit()
-        conn.close()
-        return True
-
     def _get_user_likes(self, user_id: int) -> Set[int]:
         """Return a set of user IDs liked by the user this week."""
         week = self._get_current_week()
@@ -285,9 +251,27 @@ class SocialChatBot:
         conn.close()
         return liked
 
+    def _get_user_dislikes(self, user_id: int) -> Set[int]:
+        """Return a set of user IDs explicitly disliked by the user this week."""
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT target_user_id FROM weekly_dislikes
+            WHERE user_id = ? AND week_year = ?
+            ''',
+            (user_id, week)
+        )
+        disliked = {row[0] for row in cursor.fetchall()}
+        conn.close()
+        return disliked
+
     def _set_like_status(self, user_id: int, target_user_id: int, like: bool) -> bool:
         """Like or unlike another user. Returns True if applied."""
         if user_id == target_user_id:
+            return False
+        if self._is_matching_phase_active():
             return False
         week = self._get_current_week()
         conn = sqlite3.connect(self.db_path)
@@ -338,10 +322,17 @@ class SocialChatBot:
 
     def _like_all_participants(self, user_id: int) -> int:
         """Like all other opted-in participants. Returns number of likes added."""
+        if self._is_matching_phase_active():
+            return 0
         if not self._is_user_opted_in(user_id):
             return 0
 
-        targets = [p['user_id'] for p in self._get_participants() if p['user_id'] != user_id]
+        disliked_targets = self._get_user_dislikes(user_id)
+        targets = [
+            p['user_id']
+            for p in self._get_participants()
+            if p['user_id'] != user_id and p['user_id'] not in disliked_targets
+        ]
         if not targets:
             return 0
 
@@ -360,32 +351,171 @@ class SocialChatBot:
         conn.close()
         return changes
 
-    def _get_mutual_matches(self, user_id: int) -> List[Dict]:
-        """Return participant records for users who mutually liked each other."""
+    def _initialize_likes_for_user(self, user_id: int):
+        """Auto-like all other participants for a newly opted-in user (unless disliked)."""
+        if self._is_matching_phase_active():
+            return
+        participants = self._get_participants()
         week = self._get_current_week()
-        participants = {p['user_id']: p for p in self._get_participants()}
+        others = [p['user_id'] for p in participants if p['user_id'] != user_id]
+        if not others:
+            return
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            '''
+            SELECT target_user_id FROM weekly_dislikes
+            WHERE user_id = ? AND week_year = ?
+            ''',
+            (user_id, week)
+        )
+        disliked_targets = {row[0] for row in cursor.fetchall()}
+        auto_like_targets = [target for target in others if target not in disliked_targets]
+        if auto_like_targets:
+            cursor.executemany(
+                '''
+                INSERT OR IGNORE INTO weekly_likes (user_id, target_user_id, week_year)
+                VALUES (?, ?, ?)
+                ''',
+                [(user_id, target_id, week) for target_id in auto_like_targets]
+            )
+
+        cursor.execute(
+            '''
+            SELECT user_id FROM weekly_dislikes
+            WHERE target_user_id = ? AND week_year = ?
+            ''',
+            (user_id, week)
+        )
+        disliked_by_users = {row[0] for row in cursor.fetchall()}
+        reciprocal_sources = [source for source in others if source not in disliked_by_users]
+        if reciprocal_sources:
+            cursor.executemany(
+                '''
+                INSERT OR IGNORE INTO weekly_likes (user_id, target_user_id, week_year)
+                VALUES (?, ?, ?)
+                ''',
+                [(source_id, user_id, week) for source_id in reciprocal_sources]
+            )
+
+        conn.commit()
+        conn.close()
+
+    def _set_dislike_status(self, user_id: int, target_user_id: int, dislike: bool) -> bool:
+        """Mark/unmark a target as disliked. Returns True if applied."""
+        if user_id == target_user_id:
+            return False
+        if self._is_matching_phase_active():
+            return False
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            '''
+            SELECT 1 FROM weekly_participation
+            WHERE user_id = ? AND week_year = ? AND opted_in = 1
+            ''',
+            (user_id, week)
+        )
+        user_opted_in = cursor.fetchone()
+
+        cursor.execute(
+            '''
+            SELECT 1 FROM weekly_participation
+            WHERE user_id = ? AND week_year = ? AND opted_in = 1
+            ''',
+            (target_user_id, week)
+        )
+        target_opted_in = cursor.fetchone()
+
+        if not user_opted_in or not target_opted_in:
+            conn.close()
+            return False
+
+        if dislike:
+            cursor.execute(
+                '''
+                DELETE FROM weekly_likes
+                WHERE user_id = ? AND target_user_id = ? AND week_year = ?
+                ''',
+                (user_id, target_user_id, week)
+            )
+            cursor.execute(
+                '''
+                INSERT OR IGNORE INTO weekly_dislikes (user_id, target_user_id, week_year)
+                VALUES (?, ?, ?)
+                ''',
+                (user_id, target_user_id, week)
+            )
+        else:
+            cursor.execute(
+                '''
+                DELETE FROM weekly_dislikes
+                WHERE user_id = ? AND target_user_id = ? AND week_year = ?
+                ''',
+                (user_id, target_user_id, week)
+            )
+            cursor.execute(
+                '''
+                INSERT OR IGNORE INTO weekly_likes (user_id, target_user_id, week_year)
+                VALUES (?, ?, ?)
+                ''',
+                (user_id, target_user_id, week)
+            )
+
+        conn.commit()
+        conn.close()
+        return True
+
+    def _generate_weekly_pairings(self, participants: Dict[int, Dict]) -> Dict[int, Optional[int]]:
+        """Return a mapping of user_id -> matched user_id (or None) for this week."""
+        if not participants:
+            return {}
+
+        participant_ids = set(participants.keys())
+        likes_graph: Dict[int, Set[int]] = {user_id: set() for user_id in participant_ids}
+
+        week = self._get_current_week()
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute(
             '''
-            SELECT DISTINCT wl1.target_user_id
-            FROM weekly_likes wl1
-            JOIN weekly_likes wl2
-                ON wl1.target_user_id = wl2.user_id
-                AND wl1.user_id = wl2.target_user_id
-                AND wl1.week_year = wl2.week_year
-            WHERE wl1.user_id = ? AND wl1.week_year = ?
+            SELECT user_id, target_user_id
+            FROM weekly_likes
+            WHERE week_year = ?
             ''',
-            (user_id, week)
+            (week,)
         )
-        match_ids = {row[0] for row in cursor.fetchall()}
+
+        for liker_id, target_id in cursor.fetchall():
+            if liker_id in likes_graph and target_id in participant_ids:
+                likes_graph[liker_id].add(target_id)
+
         conn.close()
 
-        matches = []
-        for target_id in match_ids:
-            participant = participants.get(target_id)
-            if participant:
-                matches.append(participant)
+        possible_pairs: List[Tuple[int, int]] = []
+        for user_id, liked_users in likes_graph.items():
+            for target_id in liked_users:
+                if target_id not in likes_graph:
+                    continue
+                if user_id < target_id and user_id in likes_graph[target_id]:
+                    possible_pairs.append((user_id, target_id))
+
+        possible_pairs.sort(key=lambda pair: (pair[0], pair[1]))
+
+        matches: Dict[int, Optional[int]] = {user_id: None for user_id in participant_ids}
+        used: Set[int] = set()
+        for user_a, user_b in possible_pairs:
+            if user_a in used or user_b in used:
+                continue
+            matches[user_a] = user_b
+            matches[user_b] = user_a
+            used.add(user_a)
+            used.add(user_b)
+
         return matches
 
     def _get_display_name(self, participant: Dict) -> str:
@@ -404,99 +534,105 @@ class SocialChatBot:
             )
 
         participants = self._get_participants()
+        participant_lookup = {p['user_id']: p for p in participants}
         others = [p for p in participants if p['user_id'] != user_id]
         likes = self._get_user_likes(user_id)
-        matches = self._get_mutual_matches(user_id)
-        busy_status = self._get_user_busy_status(user_id)
-        self_icon = '🔴' if busy_status else '🟢'
+        dislikes = self._get_user_dislikes(user_id)
+        matching_phase_active = self._is_matching_phase_active()
+
+        pairings = self._generate_weekly_pairings(participant_lookup) if matching_phase_active else {}
+        partner_id = pairings.get(user_id) if pairings else None
+        partner = participant_lookup.get(partner_id) if partner_id else None
+        self_participant = participant_lookup.get(user_id)
+        you_label = (
+            self._get_display_name(self_participant)
+            if self_participant else TEXT["matching_you_label"]
+        )
 
         message = [TEXT['matching_phase_title'].format(week_label=week_label), ""]
-        message.append(TEXT["matching_instructions"])
-        message.append(TEXT["matching_busy_hint"])
-        message.append("")
 
-        message.append(TEXT["matching_participants_header"])
-        if not others:
-            message.append(TEXT["matching_no_participants"])
-        else:
-            for idx, participant in enumerate(others, 1):
-                name = self._get_display_name(participant)
-                liked_state = (
-                    TEXT["matching_liked"] if participant['user_id'] in likes
-                    else TEXT["matching_not_liked"]
-                )
-                message.append(
-                    TEXT["matching_participant_line"].format(
-                        idx=idx,
-                        name=name,
-                        state=liked_state
-                    )
-                )
-
-        message.append("")
-        message.append(TEXT["matching_matches_header"])
-        if not matches:
-            message.append(TEXT["matching_no_matches"])
-        else:
-            you_label = TEXT["matching_you_label"]
-            for idx, match in enumerate(matches, 1):
-                other_icon = '🔴' if match.get('is_busy') else '🟢'
-                name = self._get_display_name(match)
+        if matching_phase_active:
+            message.append(TEXT["matching_phase_locked"])
+            message.append("")
+            message.append(TEXT["matching_matches_header"])
+            if not partner:
+                message.append(TEXT["matching_no_matches"])
+            else:
+                name = self._get_display_name(partner)
                 message.append(
                     TEXT["matching_match_line"].format(
-                        idx=idx,
-                        self_icon=self_icon,
+                        idx=1,
                         you_label=you_label,
-                        other_icon=other_icon,
                         name=name
                     )
                 )
+        else:
+            message.append(TEXT["matching_instructions"])
+            message.append("")
+            message.append(TEXT["matching_participants_header"])
+            if not others:
+                message.append(TEXT["matching_no_participants"])
+            else:
+                for idx, participant in enumerate(others, 1):
+                    name = self._get_display_name(participant)
+                    participant_id = participant['user_id']
+                    if participant_id in dislikes:
+                        liked_state = TEXT["matching_disliked"]
+                    elif participant_id in likes:
+                        liked_state = TEXT["matching_liked"]
+                    else:
+                        liked_state = TEXT["matching_not_liked"]
+                    message.append(
+                        TEXT["matching_participant_line"].format(
+                            idx=idx,
+                            name=name,
+                            state=liked_state
+                        )
+                    )
 
-        message.append("")
-        message.append(TEXT["matching_legend"])
+            message.append("")
+            message.append(TEXT["matching_matches_header"])
+            message.append(TEXT["matching_waiting_notice"])
+
         return "\n".join(message)
 
     def _build_matching_keyboard(self, user_id: int) -> InlineKeyboardMarkup:
         """Return inline buttons for liking/unliking and status controls."""
-        busy_status = self._get_user_busy_status(user_id)
-        if busy_status is None:
+        if not self._is_user_opted_in(user_id):
+            return InlineKeyboardMarkup([
+                [InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")]
+            ])
+
+        if self._is_matching_phase_active():
             return InlineKeyboardMarkup([
                 [InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")]
             ])
 
         participants = [p for p in self._get_participants() if p['user_id'] != user_id]
-        likes = self._get_user_likes(user_id)
+        dislikes = self._get_user_dislikes(user_id)
         buttons: List[List[InlineKeyboardButton]] = []
 
         for participant in participants:
             name = self._get_display_name(participant)
-            if participant['user_id'] in likes:
+            pid = participant['user_id']
+            if pid in dislikes:
                 buttons.append([
                     InlineKeyboardButton(
-                        BUTTONS["unlike"].format(name=name),
-                        callback_data=f"list_unlike_{participant['user_id']}"
+                        BUTTONS["like"].format(name=name),
+                        callback_data=f"list_like_{pid}"
                     )
                 ])
             else:
                 buttons.append([
                     InlineKeyboardButton(
-                        BUTTONS["like"].format(name=name),
-                        callback_data=f"list_like_{participant['user_id']}"
+                        BUTTONS["unlike"].format(name=name),
+                        callback_data=f"list_unlike_{pid}"
                     )
                 ])
 
         if participants:
             buttons.append([
                 InlineKeyboardButton(BUTTONS["like_all"], callback_data="list_like_all")
-            ])
-
-        if busy_status:
-            buttons.append([
-                InlineKeyboardButton(BUTTONS["mark_available"], callback_data="list_set_available")
-            ])
-        else:
-            buttons.append([
-                InlineKeyboardButton(BUTTONS["mark_busy"], callback_data="list_set_busy")
             ])
 
         buttons.append([
@@ -557,6 +693,14 @@ class SocialChatBot:
             'DELETE FROM weekly_likes WHERE week_year = ?',
             (week,)
         )
+        cursor.execute(
+            'DELETE FROM weekly_dislikes WHERE week_year = ?',
+            (week,)
+        )
+        cursor.execute(
+            'DELETE FROM weekly_state WHERE week_year = ?',
+            (week,)
+        )
         conn.commit()
         conn.close()
         return deleted
@@ -602,6 +746,51 @@ class SocialChatBot:
             'opted_out': opted_out,
             'pending': pending
         }
+
+    def _is_matching_phase_active(self) -> bool:
+        """Return True if the current week is in the matching phase."""
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT is_matching_phase
+            FROM weekly_state
+            WHERE week_year = ?
+            ''',
+            (week,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        return bool(row and row[0] == 1)
+
+    def _start_matching_phase(self):
+        """Mark the current week as being in the matching phase."""
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            INSERT INTO weekly_state (week_year, is_matching_phase, matching_started_at)
+            VALUES (?, 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(week_year)
+            DO UPDATE SET
+                is_matching_phase = 1,
+                matching_started_at = CURRENT_TIMESTAMP
+            ''',
+            (week,)
+        )
+        conn.commit()
+        conn.close()
+
+    def _reset_matching_phase(self):
+        """Clear any stored matching phase marker for the current week."""
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM weekly_state WHERE week_year = ?', (week,))
+        conn.commit()
+        conn.close()
 
     def _get_bot(self, context: Optional[ContextTypes.DEFAULT_TYPE]):
         """Resolve the bot instance from the context or application."""
@@ -698,38 +887,36 @@ class SocialChatBot:
         query = update.callback_query
         action = query.data
         user_id = query.from_user.id
+        matching_locked = self._is_matching_phase_active()
 
         response = ""
         if action == "list_like_all":
+            if matching_locked:
+                await query.answer(ALERTS["matching_locked"], show_alert=True)
+                return
             liked_count = self._like_all_participants(user_id)
             if not liked_count:
                 await query.answer(ALERTS["like_all_unavailable"], show_alert=True)
                 return
             response = RESPONSES["like_all_success"]
         elif action.startswith("list_like_"):
+            if matching_locked:
+                await query.answer(ALERTS["matching_locked"], show_alert=True)
+                return
             target_id = int(action.split('_')[-1])
-            if not self._set_like_status(user_id, target_id, True):
+            if not self._set_dislike_status(user_id, target_id, False):
                 await query.answer(ALERTS["like_requires_optin"], show_alert=True)
                 return
-            response = RESPONSES["like_success"]
+            response = RESPONSES["dislike_removed"]
         elif action.startswith("list_unlike_"):
+            if matching_locked:
+                await query.answer(ALERTS["matching_locked"], show_alert=True)
+                return
             target_id = int(action.split('_')[-1])
-            if not self._set_like_status(user_id, target_id, False):
-                await query.answer(ALERTS["unlike_failed"], show_alert=True)
+            if not self._set_dislike_status(user_id, target_id, True):
+                await query.answer(ALERTS["dislike_failed"], show_alert=True)
                 return
-            response = RESPONSES["unlike_success"]
-        elif action == "list_set_busy":
-            updated = self._set_user_busy_status(user_id, True)
-            if not updated:
-                await query.answer(ALERTS["busy_requires_optin"], show_alert=True)
-                return
-            response = RESPONSES["busy_on"]
-        elif action == "list_set_available":
-            updated = self._set_user_busy_status(user_id, False)
-            if not updated:
-                await query.answer(ALERTS["available_requires_optin"], show_alert=True)
-                return
-            response = RESPONSES["busy_off"]
+            response = RESPONSES["dislike_success"]
         elif action == "list_refresh":
             response = RESPONSES["refresh"]
         else:
@@ -771,6 +958,7 @@ class SocialChatBot:
     
     async def send_participant_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send list of participants to all who opted in."""
+        self._start_matching_phase()
         participants = self._get_participants()
         week = self._get_current_week()
         bot = self._get_bot(context)

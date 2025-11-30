@@ -81,16 +81,17 @@ User views who's participating:
 ```
 User: /list
 
-Bot: 🎉 People available to hang out this week (2025-W46):
+Bot: 🎯 Matching Phase (2025-W46)
+Everyone starts liked. Tap 💔 to remove someone or ❤️ to add them back before matching begins.
 
-1. @alice
-2. @bob
-3. @charlie
-4. @diana
+👥 Opted-in participants:
+1. @alice — ❤️ Interested
+2. @bob — ❤️ Interested
+3. @charlie — ❤️ Interested
+4. @diana — ❤️ Interested
 
-👥 Total: 4 people
-
-Reach out to them and plan something fun!
+💌 Your matches:
+Matching hasn't started yet. Keep liking people you're interested in!
 ```
 
 ### Example 5: Opting Out

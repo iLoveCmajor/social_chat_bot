@@ -42,6 +42,9 @@ def test_database_initialization():
     
     assert 'weekly_participation' in tables, "Weekly participation table not created"
     print("✓ Weekly participation table exists")
+
+    assert 'weekly_dislikes' in tables, "Weekly dislikes table not created"
+    print("✓ Weekly dislikes table exists")
     
     # Verify table schemas
     cursor.execute("PRAGMA table_info(users)")
@@ -109,7 +112,54 @@ def test_database_initialization():
     active_users = bot._get_all_active_users()
     assert len(active_users) == 1, "Should have one active user"
     print(f"✓ Active users retrieved: {len(active_users)} users")
-    
+
+    print("\nTesting weekly pairing logic...")
+    bot._reset_current_week_participation()
+
+    match_users = [
+        (20001, "match_a", "Match A", 90001),
+        (20002, "match_b", "Match B", 90002),
+        (20003, "match_c", "Match C", 90003),
+        (20004, "match_d", "Match D", 90004),
+        (20005, "match_e", "Match E", 90005),
+    ]
+
+    for user_id, username, first_name, chat_id in match_users:
+        bot._add_user(user_id, username, first_name, chat_id)
+        bot._set_user_participation(user_id, True)
+
+    likes_for_a = bot._get_user_likes(20001)
+    assert likes_for_a.issuperset({20002, 20003, 20004, 20005}), "Newly opted-in users should auto-like everyone"
+    print("✓ Auto-like on opt-in covers all participants")
+
+    bot._set_dislike_status(20001, 20002, True)
+    likes_for_a = bot._get_user_likes(20001)
+    assert 20002 not in likes_for_a, "Dislike should remove like record"
+    dislikes_for_a = bot._get_user_dislikes(20001)
+    assert 20002 in dislikes_for_a, "Dislike state should be tracked"
+    bot._set_dislike_status(20001, 20002, False)
+    assert 20002 in bot._get_user_likes(20001), "Removing dislike should restore like"
+    print("✓ Dislike toggles update likes/dislikes correctly")
+
+    participants = bot._get_participants()
+    participant_lookup = {p['user_id']: p for p in participants}
+    matches = bot._generate_weekly_pairings(participant_lookup)
+
+    assert matches[20001] == 20002, "match_a should pair with match_b"
+    assert matches[20002] == 20001, "match_b should pair with match_a"
+    assert matches[20003] == 20004, "match_c should pair with match_d"
+    assert matches[20004] == 20003, "match_d should pair with match_c"
+    assert matches[20005] is None, "match_e should remain unmatched"
+    print("✓ Weekly pairing logic generates disjoint pairs with leftovers")
+
+    print("\nTesting matching phase gating...")
+    assert not bot._is_matching_phase_active(), "Matching phase should be inactive by default"
+    bot._start_matching_phase()
+    assert bot._is_matching_phase_active(), "Matching phase should be active after start"
+    assert bot._set_like_status(20005, 20001, True) is False, "Likes should be locked once matching starts"
+    assert bot._like_all_participants(20005) == 0, "Bulk liking should be disabled during matching phase"
+    print("✓ Matching phase prevents further liking actions")
+
     # Clean up test database
     bot.db_path.unlink()
     print(f"\n✓ Test database cleaned up")
