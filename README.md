@@ -141,11 +141,10 @@ Once the bot is running, users can interact with it using these commands:
 
 **Admin Commands** (restricted to IDs in `admin_ids` / `ADMIN_IDS`):
 
-- `/admin_optin` - Immediately send the weekly opt-in reminder
-- `/admin_matching` - Send the current week's participant list right away
+- `/admin_next_phase` - Advance from the opt-in phase to matching (if matching is already active, it tells you to reset instead)
 - `/admin_list` - Show a full overview: during opt-in see each participant with their likes/dislikes, during matching see all matches and anyone still unmatched
 - `/admin_status` - See how many users are active/opted-in/opted-out for the current week
-- `/admin_reset` - Clear participation data for the current week and start fresh
+- `/admin_reset` - Reset the current week and send a fresh opt-in reminder to everyone
 
 ## Example Workflow
 

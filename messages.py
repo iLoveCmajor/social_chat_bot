@@ -79,11 +79,10 @@ TEXT = {
         "/list - See who's already signed up"
     ),
     "admin_only": "⛔ This command is restricted to admins.",
-    "admin_optin_sent": "✅ Weekly reminder sent to {count} active users.",
-    "admin_optin_none": "⚠️ No active users found to notify.",
-    "admin_matching_sent": "📬 Participant list sent to {count} opted-in users.",
-    "admin_matching_none": "ℹ️ There are no participants to send a list to this week.",
-    "admin_reset": "🔄 Cleared {count} participation record(s) for week {week_label}.",
+    "admin_next_phase_sent": "🚀 Matching phase started and sent dashboards to {count} participants.",
+    "admin_next_phase_none": "ℹ️ No opted-in participants to move into matching yet.",
+    "admin_next_phase_blocked": "⚠️ Matching is already active. Use /admin_reset to restart the cycle.",
+    "admin_reset": "🔄 Restarted {week_label}: cleared {count} participation record(s) and sent reminders to {notified} active user(s).",
     "admin_status": (
         "📊 Weekly Status ({week_label}):\n"
         "• Active users: {active}\n"
@@ -94,7 +93,6 @@ TEXT = {
     "admin_pairs_header": "🤝 Matches for {week_label}:",
     "admin_pairs_line": "{idx}. {name_a} ❤️ {name_b}",
     "admin_pairs_none": "🤝 No mutual matches were created this week.",
-    "admin_pairs_unavailable": "ℹ️ Matching hasn't started yet, so there are no pairs to show.",
     "admin_list_optin_header": "📝 Opt-in overview for {week_label}:",
     "admin_list_participant_line": "• {name}\n  Likes: {likes}\n  Dislikes: {dislikes}",
     "admin_list_none": "None",

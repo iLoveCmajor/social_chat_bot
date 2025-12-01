@@ -993,27 +993,20 @@ class SocialChatBot:
         
         return sent_count
 
-    async def admin_start_optin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Allow admins to manually trigger the opt-in reminder."""
+    async def admin_next_phase_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Advance the weekly process to the next phase."""
         if not await self._ensure_admin(update):
             return
-        
-        sent = await self.send_weekly_reminder(context)
-        if sent:
-            await update.message.reply_text(TEXT["admin_optin_sent"].format(count=sent))
-        else:
-            await update.message.reply_text(TEXT["admin_optin_none"])
 
-    async def admin_start_matching_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Allow admins to manually trigger participant matching."""
-        if not await self._ensure_admin(update):
+        if self._is_matching_phase_active():
+            await update.message.reply_text(TEXT["admin_next_phase_blocked"])
             return
-        
+
         sent = await self.send_participant_list(context)
         if sent:
-            await update.message.reply_text(TEXT["admin_matching_sent"].format(count=sent))
+            await update.message.reply_text(TEXT["admin_next_phase_sent"].format(count=sent))
         else:
-            await update.message.reply_text(TEXT["admin_matching_none"])
+            await update.message.reply_text(TEXT["admin_next_phase_none"])
 
     async def admin_list_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show admin overview of participants/matches depending on phase."""
@@ -1128,8 +1121,9 @@ class SocialChatBot:
         
         deleted = self._reset_current_week_participation()
         week_label = self._get_current_week_label()
+        notified = await self.send_weekly_reminder(context) or 0
         await update.message.reply_text(
-            TEXT["admin_reset"].format(count=deleted, week_label=week_label)
+            TEXT["admin_reset"].format(count=deleted, week_label=week_label, notified=notified)
         )
     
     def run(self):
@@ -1144,8 +1138,7 @@ class SocialChatBot:
         self.application.add_handler(CommandHandler("optout", self.optout_command))
         self.application.add_handler(CommandHandler("status", self.status_command))
         self.application.add_handler(CommandHandler("list", self.list_command))
-        self.application.add_handler(CommandHandler("admin_optin", self.admin_start_optin_command))
-        self.application.add_handler(CommandHandler("admin_matching", self.admin_start_matching_command))
+        self.application.add_handler(CommandHandler("admin_next_phase", self.admin_next_phase_command))
         self.application.add_handler(CommandHandler("admin_list", self.admin_list_command))
         self.application.add_handler(CommandHandler("admin_status", self.admin_status_command))
         self.application.add_handler(CommandHandler("admin_reset", self.admin_reset_week_command))
