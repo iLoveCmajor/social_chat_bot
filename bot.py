@@ -655,9 +655,10 @@ class SocialChatBot:
                 buttons.append([
                     InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin")
                 ])
-            buttons.append([
-                InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
-            ])
+            else:
+                buttons.append([
+                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
+                ])
             return InlineKeyboardMarkup(buttons)
 
         if not self._is_user_opted_in(user_id):
@@ -706,9 +707,10 @@ class SocialChatBot:
                 buttons.append([
                     InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin")
                 ])
-            buttons.append([
-                InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
-            ])
+            else:
+                buttons.append([
+                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
+                ])
         elif phase == 'liking' and opted_in:
             buttons.append([
                 InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_optout")
