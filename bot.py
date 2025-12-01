@@ -448,6 +448,14 @@ class SocialChatBot:
         conn.close()
         return True
 
+    def _dislike_all_participants(self, user_id: int):
+        """Mark every other participant as disliked."""
+        if self._get_week_phase() != 'liking':
+            return
+        targets = [p['user_id'] for p in self._get_participants() if p['user_id'] != user_id]
+        for target_id in targets:
+            self._set_dislike_status(user_id, target_id, True)
+
     def _generate_weekly_pairings(self, participants: Dict[int, Dict]) -> Dict[int, Optional[int]]:
         """Return a mapping of user_id -> matched user_id (or None) for this week."""
         if not participants:
@@ -1015,8 +1023,29 @@ class SocialChatBot:
             if phase not in ('optin', 'liking'):
                 await query.answer(ALERTS["optin_phase_only"], show_alert=True)
                 return
+            if phase == 'liking':
+                confirm_keyboard = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton(BUTTONS["confirm_yes"], callback_data="list_dislike_all_yes"),
+                        InlineKeyboardButton(BUTTONS["confirm_no"], callback_data="list_dislike_all_no")
+                    ]
+                ])
+                await query.message.reply_text(
+                    TEXT["dislike_all_confirm"],
+                    reply_markup=confirm_keyboard
+                )
+                await query.answer(RESPONSES["done"])
+                return
             self._set_user_participation(user_id, False)
             response = RESPONSES["optout_set"]
+        elif action == "list_dislike_all_yes":
+            if self._get_week_phase() != 'liking':
+                await query.answer(ALERTS["optin_phase_only"], show_alert=True)
+                return
+            self._dislike_all_participants(user_id)
+            response = RESPONSES["dislike_all_set"]
+        elif action == "list_dislike_all_no":
+            response = RESPONSES["done"]
         elif action.startswith("list_like_"):
             if matching_locked:
                 await query.answer(ALERTS["matching_locked"], show_alert=True)

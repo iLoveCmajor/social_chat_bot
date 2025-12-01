@@ -93,7 +93,9 @@ TEXT = {
     "admin_list_unmatched_line": "• {name}",
     "admin_list_unmatched_none": "Everyone received a match this week!",
     "liking_phase_optin_closed": "Opt-ins are closed while the liking phase is in progress. Please come back next week!",
-    "liking_phase_already_in": "Liking phase is underway and you're already participating. Use the buttons to manage dislikes or tap Opt Out to leave.",
+    "liking_phase_already_in": "Liking phase is underway and you're already participating. Use the buttons to manage dislikes or tap Dislike Everyone to avoid matches.",
+    "dislike_all_confirm": "Are you sure you want to mark everyone as disliked for this week? You will not be matched.",
+    "dislike_all_done": "You're set to skip matching this week.",
 }
 
 BUTTONS = {
@@ -101,7 +103,9 @@ BUTTONS = {
     "like": "💔 {name}",
     "optin": "✅ Opt me in",
     "optout": "⏭ Skip this week",
-    "optout_final": "🚫 Opt me out (week locked)",
+    "optout_final": "🙅 Dislike everyone",
+    "confirm_yes": "Yes",
+    "confirm_no": "No",
     "status": "📊 Status",
     "help": "❓ Help",
 }
@@ -112,7 +116,7 @@ RESPONSES = {
     "dislike_removed": "Removed dislike.",
     "optin_set": "You're in for this week!",
     "optout_set": "You're out for this week.",
-    "refresh": "Lists refreshed.",
+    "dislike_all_set": "You won't be matched this week.",
     "unknown": "Unknown action.",
     "done": "Done.",
 }
