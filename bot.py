@@ -651,20 +651,13 @@ class SocialChatBot:
                 buttons.append([
                     InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin")
                 ])
-            buttons.append([
-                InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")
-            ])
             return InlineKeyboardMarkup(buttons)
 
         if not self._is_user_opted_in(user_id):
-            return InlineKeyboardMarkup([
-                [InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")]
-            ])
+            return InlineKeyboardMarkup([])
 
         if phase == 'matching':
-            return InlineKeyboardMarkup([
-                [InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")]
-            ])
+            return InlineKeyboardMarkup([])
 
         participants = [p for p in self._get_participants() if p['user_id'] != user_id]
         dislikes = self._get_user_dislikes(user_id)
@@ -693,10 +686,6 @@ class SocialChatBot:
                     )
                 ])
 
-        buttons.append([
-            InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")
-        ])
-
         return InlineKeyboardMarkup(buttons)
 
     def _build_main_menu_keyboard(self, user_id: int) -> InlineKeyboardMarkup:
@@ -718,14 +707,11 @@ class SocialChatBot:
             buttons.append([
                 InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_optout")
             ])
-
-        buttons.append([
-            InlineKeyboardButton(BUTTONS["dashboard"], callback_data="list_refresh")
-        ])
-        buttons.append([
-            InlineKeyboardButton(BUTTONS["status"], callback_data="list_status"),
-            InlineKeyboardButton(BUTTONS["help"], callback_data="list_help")
-        ])
+        else:
+            buttons.append([
+                InlineKeyboardButton(BUTTONS["status"], callback_data="list_status"),
+                InlineKeyboardButton(BUTTONS["help"], callback_data="list_help")
+            ])
         return InlineKeyboardMarkup(buttons)
     
     def _get_all_active_users(self) -> List[Dict]:

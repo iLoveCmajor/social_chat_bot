@@ -67,8 +67,7 @@ TEXT = {
         "🔔 Weekly Social Reminder!\n\n"
         "It's a new week ({week_label})! 🎉\n\n"
         "Would you like to be social this week?\n\n"
-        "Tap Opt In if you're available or Opt Out if you're busy.\n"
-        "Use the Dashboard button to see who else has joined."
+        "Tap Opt In if you're available or Skip this week if you're busy."
     ),
     "admin_only": "⛔ This command is restricted to admins.",
     "admin_next_phase_liking_sent": "🎬 Liking phase started and sent dashboards to {count} participants.",
@@ -94,19 +93,17 @@ TEXT = {
     "admin_list_unmatched_line": "• {name}",
     "admin_list_unmatched_none": "Everyone received a match this week!",
     "liking_phase_optin_closed": "Opt-ins are closed while the liking phase is in progress. Please come back next week!",
-    "liking_phase_already_in": "Liking phase is underway and you're already participating. Use the dashboard to manage dislikes or tap Opt Out to leave.",
+    "liking_phase_already_in": "Liking phase is underway and you're already participating. Use the buttons to manage dislikes or tap Opt Out to leave.",
 }
 
 BUTTONS = {
-    "unlike": "💔 Dislike {name}",
-    "like": "❤️ Like {name}",
+    "unlike": "❤️ {name}",
+    "like": "💔 {name}",
     "optin": "✅ Opt me in",
-    "optout": "🚫 Opt me out",
-    "optout_final": "🚫 Opt me out (irreversible)",
-    "dashboard": "📋 Dashboard",
+    "optout": "⏭ Skip this week",
+    "optout_final": "🚫 Opt me out (week locked)",
     "status": "📊 Status",
     "help": "❓ Help",
-    "refresh": "Refresh 🔄",
 }
 
 RESPONSES = {
