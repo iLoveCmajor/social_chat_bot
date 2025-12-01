@@ -244,6 +244,24 @@ class SocialChatBot:
         conn.close()
         return bool(row and row[0] == 1)
 
+    def _get_participation_state(self, user_id: int) -> Tuple[bool, bool]:
+        """Return (has_responded, is_opted_in) for current week."""
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT opted_in FROM weekly_participation
+            WHERE user_id = ? AND week_year = ?
+            ''',
+            (user_id, week)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return False, False
+        return True, bool(row[0])
+
     def _get_user_likes(self, user_id: int) -> Set[int]:
         """Return a set of user IDs liked by the user this week."""
         week = self._get_current_week()
@@ -649,15 +667,20 @@ class SocialChatBot:
         phase = self._get_week_phase()
 
         if phase == 'optin':
-            opted_in = self._is_user_opted_in(user_id)
+            responded, opted_in = self._get_participation_state(user_id)
             buttons = []
-            if not opted_in:
+            if not responded:
                 buttons.append([
-                    InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin")
+                    InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin"),
+                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
+                ])
+            elif opted_in:
+                buttons.append([
+                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
                 ])
             else:
                 buttons.append([
-                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
+                    InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin")
                 ])
             return InlineKeyboardMarkup(buttons)
 
@@ -703,13 +726,19 @@ class SocialChatBot:
         buttons: List[List[InlineKeyboardButton]] = []
 
         if phase == 'optin':
-            if not opted_in:
+            responded, opted_in = self._get_participation_state(user_id)
+            if not responded:
                 buttons.append([
-                    InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin")
+                    InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin"),
+                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
+                ])
+            elif opted_in:
+                buttons.append([
+                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
                 ])
             else:
                 buttons.append([
-                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
+                    InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin")
                 ])
         elif phase == 'liking' and opted_in:
             buttons.append([
