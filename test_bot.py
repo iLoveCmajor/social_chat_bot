@@ -157,7 +157,6 @@ def test_database_initialization():
     bot._start_matching_phase()
     assert bot._is_matching_phase_active(), "Matching phase should be active after start"
     assert bot._set_like_status(20005, 20001, True) is False, "Likes should be locked once matching starts"
-    assert bot._like_all_participants(20005) == 0, "Bulk liking should be disabled during matching phase"
     print("✓ Matching phase prevents further liking actions")
 
     # Clean up test database

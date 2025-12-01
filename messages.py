@@ -28,8 +28,7 @@ TEXT = {
     ),
     "optin_confirmation": (
         "✅ Great! You're in for this week!\n\n"
-        "I'll send you a list of other participants when the week starts.\n"
-        "Use /list to see who's already signed up."
+        "Everyone starts liked by default—use the buttons below to mark anyone you don't want to match with."
     ),
     "optout_confirmation": (
         "👋 No problem! You've opted out for this week.\n\n"
@@ -42,20 +41,28 @@ TEXT = {
         "{status}\n\n"
         "Use /optin or /optout to change your status."
     ),
+    "matching_phase_change_locked_optedin": (
+        "⚠️ Matching for this week is already in progress, so changes are locked.\n"
+        "Here's your current match view:"
+    ),
+    "matching_phase_change_locked_notoptedin": (
+        "⚠️ Matching for this week has already started and changes are locked.\n"
+        "You weren't part of this week's pool—please come back next week!"
+    ),
     "matching_phase_title": "🎯 Matching Phase ({week_label})",
     "matching_not_opted": (
         "You're currently not opted in for this week. Use /optin to join the matching phase."
     ),
-    "matching_instructions": "Everyone starts liked. Tap 💔 to remove someone or ❤️ to add them back before matching begins.",
+    "matching_instructions": "Everyone starts liked. Tap 💔 to dislike someone you don't want to match with.",
     "matching_participants_header": "👥 Opted-in participants:",
     "matching_no_participants": "- No other participants yet. Invite friends to opt in!",
     "matching_liked": "❤️ Interested",
     "matching_disliked": "💔 Disliked",
     "matching_not_liked": "♡ Pending",
     "matching_participant_line": "{idx}. {name} — {state}",
-    "matching_matches_header": "💌 Your matches:",
+    "matching_matches_header": "💌 Matches",
     "matching_no_matches": "Sorry, no match this week.",
-    "matching_waiting_notice": "Matching hasn't started yet. Keep liking people you're interested in!",
+    "matching_waiting_notice": "In the next phase you will be matched with one of the users you liked (If possible)./nFor now feel free to review and adjust your likes.",
     "matching_phase_locked": "✨ Matching for this week has started. Likes are frozen and your final match is below.",
     "matching_match_line": "{idx}. {you_label} ❤️ {name}",
     "matching_you_label": "You",
@@ -84,12 +91,22 @@ TEXT = {
         "• Opted out: {opted_out}\n"
         "• No response yet: {pending}"
     ),
+    "admin_pairs_header": "🤝 Matches for {week_label}:",
+    "admin_pairs_line": "{idx}. {name_a} ❤️ {name_b}",
+    "admin_pairs_none": "🤝 No mutual matches were created this week.",
+    "admin_pairs_unavailable": "ℹ️ Matching hasn't started yet, so there are no pairs to show.",
+    "admin_list_optin_header": "📝 Opt-in overview for {week_label}:",
+    "admin_list_participant_line": "• {name}\n  Likes: {likes}\n  Dislikes: {dislikes}",
+    "admin_list_none": "None",
+    "admin_list_no_participants": "ℹ️ No opted-in participants for {week_label}.",
+    "admin_list_unmatched_header": "🙋 Unmatched participants:",
+    "admin_list_unmatched_line": "• {name}",
+    "admin_list_unmatched_none": "Everyone received a match this week!",
 }
 
 BUTTONS = {
     "unlike": "💔 Dislike {name}",
-    "like": "❤️ Undo dislike for {name}",
-    "like_all": "❤️ Like everyone",
+    "like": "❤️ Like {name}",
     "refresh": "Refresh 🔄",
 }
 
@@ -97,7 +114,6 @@ RESPONSES = {
     "like_success": "Liked!",
     "dislike_success": "Marked as disliked.",
     "dislike_removed": "Removed dislike.",
-    "like_all_success": "Liked everyone!",
     "refresh": "Lists refreshed.",
     "unknown": "Unknown action.",
     "done": "Done.",
@@ -106,6 +122,5 @@ RESPONSES = {
 ALERTS = {
     "like_requires_optin": "Both users must be opted in before liking.",
     "dislike_failed": "Could not update dislike.",
-    "like_all_unavailable": "No participants to like or you're not opted in.",
     "matching_locked": "Matching is already in progress this week. Likes are closed.",
 }

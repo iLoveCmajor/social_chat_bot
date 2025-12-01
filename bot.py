@@ -320,37 +320,6 @@ class SocialChatBot:
         conn.close()
         return True
 
-    def _like_all_participants(self, user_id: int) -> int:
-        """Like all other opted-in participants. Returns number of likes added."""
-        if self._is_matching_phase_active():
-            return 0
-        if not self._is_user_opted_in(user_id):
-            return 0
-
-        disliked_targets = self._get_user_dislikes(user_id)
-        targets = [
-            p['user_id']
-            for p in self._get_participants()
-            if p['user_id'] != user_id and p['user_id'] not in disliked_targets
-        ]
-        if not targets:
-            return 0
-
-        week = self._get_current_week()
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.executemany(
-            '''
-            INSERT OR IGNORE INTO weekly_likes (user_id, target_user_id, week_year)
-            VALUES (?, ?, ?)
-            ''',
-            [(user_id, target_id, week) for target_id in targets]
-        )
-        conn.commit()
-        changes = conn.total_changes
-        conn.close()
-        return changes
-
     def _initialize_likes_for_user(self, user_id: int):
         """Auto-like all other participants for a newly opted-in user (unless disliked)."""
         if self._is_matching_phase_active():
@@ -518,6 +487,38 @@ class SocialChatBot:
 
         return matches
 
+    def _get_week_relationships(self) -> Tuple[Dict[int, Set[int]], Dict[int, Set[int]]]:
+        """Return dictionaries of likes and dislikes for the current week."""
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        likes_map: Dict[int, Set[int]] = {}
+        dislikes_map: Dict[int, Set[int]] = {}
+
+        cursor.execute(
+            '''
+            SELECT user_id, target_user_id FROM weekly_likes
+            WHERE week_year = ?
+            ''',
+            (week,)
+        )
+        for user_id, target_id in cursor.fetchall():
+            likes_map.setdefault(user_id, set()).add(target_id)
+
+        cursor.execute(
+            '''
+            SELECT user_id, target_user_id FROM weekly_dislikes
+            WHERE week_year = ?
+            ''',
+            (week,)
+        )
+        for user_id, target_id in cursor.fetchall():
+            dislikes_map.setdefault(user_id, set()).add(target_id)
+
+        conn.close()
+        return likes_map, dislikes_map
+
     def _get_display_name(self, participant: Dict) -> str:
         username = participant.get('username')
         if username:
@@ -629,11 +630,6 @@ class SocialChatBot:
                         callback_data=f"list_unlike_{pid}"
                     )
                 ])
-
-        if participants:
-            buttons.append([
-                InlineKeyboardButton(BUTTONS["like_all"], callback_data="list_like_all")
-            ])
 
         buttons.append([
             InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")
@@ -822,6 +818,15 @@ class SocialChatBot:
         """Handle /optin command."""
         user = update.effective_user
         chat_id = update.effective_chat.id
+        if self._is_matching_phase_active():
+            if self._is_user_opted_in(user.id):
+                await update.message.reply_text(TEXT["matching_phase_change_locked_optedin"])
+                matching_message = self._build_matching_phase_message(user.id)
+                reply_markup = self._build_matching_keyboard(user.id)
+                await update.message.reply_text(matching_message, reply_markup=reply_markup)
+            else:
+                await update.message.reply_text(TEXT["matching_phase_change_locked_notoptedin"])
+            return
         
         # Ensure user is in database
         self._add_user(user.id, user.username, user.first_name, chat_id)
@@ -832,10 +837,23 @@ class SocialChatBot:
         message = TEXT["optin_confirmation"]
         
         await update.message.reply_text(message)
+
+        matching_message = self._build_matching_phase_message(user.id)
+        reply_markup = self._build_matching_keyboard(user.id)
+        await update.message.reply_text(matching_message, reply_markup=reply_markup)
     
     async def optout_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /optout command."""
         user = update.effective_user
+        if self._is_matching_phase_active():
+            if self._is_user_opted_in(user.id):
+                await update.message.reply_text(TEXT["matching_phase_change_locked_optedin"])
+                matching_message = self._build_matching_phase_message(user.id)
+                reply_markup = self._build_matching_keyboard(user.id)
+                await update.message.reply_text(matching_message, reply_markup=reply_markup)
+            else:
+                await update.message.reply_text(TEXT["matching_phase_change_locked_notoptedin"])
+            return
         
         # Set participation to false
         self._set_user_participation(user.id, False)
@@ -890,16 +908,7 @@ class SocialChatBot:
         matching_locked = self._is_matching_phase_active()
 
         response = ""
-        if action == "list_like_all":
-            if matching_locked:
-                await query.answer(ALERTS["matching_locked"], show_alert=True)
-                return
-            liked_count = self._like_all_participants(user_id)
-            if not liked_count:
-                await query.answer(ALERTS["like_all_unavailable"], show_alert=True)
-                return
-            response = RESPONSES["like_all_success"]
-        elif action.startswith("list_like_"):
+        if action.startswith("list_like_"):
             if matching_locked:
                 await query.answer(ALERTS["matching_locked"], show_alert=True)
                 return
@@ -1006,6 +1015,96 @@ class SocialChatBot:
         else:
             await update.message.reply_text(TEXT["admin_matching_none"])
 
+    async def admin_list_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show admin overview of participants/matches depending on phase."""
+        if not await self._ensure_admin(update):
+            return
+
+        participants = self._get_participants()
+        participant_lookup = {p['user_id']: p for p in participants}
+        week_label = self._get_current_week_label()
+
+        if not participants:
+            await update.message.reply_text(
+                TEXT["admin_list_no_participants"].format(week_label=week_label)
+            )
+            return
+
+        likes_map, dislikes_map = self._get_week_relationships()
+
+        if not self._is_matching_phase_active():
+            lines = [TEXT["admin_list_optin_header"].format(week_label=week_label)]
+            sorted_participants = sorted(
+                participants,
+                key=lambda p: self._get_display_name(p).lower()
+            )
+            for participant in sorted_participants:
+                user_id = participant['user_id']
+                like_names = [
+                    self._get_display_name(participant_lookup.get(target_id, {}))
+                    for target_id in sorted(likes_map.get(user_id, set()))
+                    if target_id in participant_lookup
+                ]
+                dislike_names = [
+                    self._get_display_name(participant_lookup.get(target_id, {}))
+                    for target_id in sorted(dislikes_map.get(user_id, set()))
+                    if target_id in participant_lookup
+                ]
+                likes_text = ", ".join(like_names) if like_names else TEXT["admin_list_none"]
+                dislikes_text = ", ".join(dislike_names) if dislike_names else TEXT["admin_list_none"]
+                lines.append(
+                    TEXT["admin_list_participant_line"].format(
+                        name=self._get_display_name(participant),
+                        likes=likes_text,
+                        dislikes=dislikes_text
+                    )
+                )
+            await update.message.reply_text("\n".join(lines))
+            return
+
+        pairings = self._generate_weekly_pairings(participant_lookup)
+        seen: Set[int] = set()
+        pairs: List[Tuple[int, int]] = []
+        unmatched: List[int] = []
+
+        for user_id, partner_id in pairings.items():
+            if partner_id:
+                pair_key = tuple(sorted((user_id, partner_id)))
+                if pair_key[0] in seen or pair_key[1] in seen:
+                    continue
+                pairs.append(pair_key)
+                seen.update(pair_key)
+            else:
+                unmatched.append(user_id)
+
+        pairs.sort(key=lambda ids: (self._get_display_name(participant_lookup[ids[0]]).lower(),
+                                    self._get_display_name(participant_lookup[ids[1]]).lower()))
+        unmatched = sorted(
+            {uid for uid in unmatched if uid in participant_lookup},
+            key=lambda uid: self._get_display_name(participant_lookup[uid]).lower()
+        )
+
+        lines = [TEXT["admin_pairs_header"].format(week_label=week_label)]
+        if pairs:
+            for idx, (user_a, user_b) in enumerate(pairs, 1):
+                name_a = self._get_display_name(participant_lookup[user_a])
+                name_b = self._get_display_name(participant_lookup[user_b])
+                lines.append(TEXT["admin_pairs_line"].format(idx=idx, name_a=name_a, name_b=name_b))
+        else:
+            lines.append(TEXT["admin_pairs_none"])
+
+        lines.append("")
+        lines.append(TEXT["admin_list_unmatched_header"])
+        if unmatched:
+            for user_id in unmatched:
+                lines.append(TEXT["admin_list_unmatched_line"].format(
+                    name=self._get_display_name(participant_lookup[user_id])
+                ))
+        else:
+            lines.append(TEXT["admin_list_unmatched_none"])
+
+        await update.message.reply_text("\n".join(lines))
+
     async def admin_status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show weekly stats to admins."""
         if not await self._ensure_admin(update):
@@ -1047,6 +1146,7 @@ class SocialChatBot:
         self.application.add_handler(CommandHandler("list", self.list_command))
         self.application.add_handler(CommandHandler("admin_optin", self.admin_start_optin_command))
         self.application.add_handler(CommandHandler("admin_matching", self.admin_start_matching_command))
+        self.application.add_handler(CommandHandler("admin_list", self.admin_list_command))
         self.application.add_handler(CommandHandler("admin_status", self.admin_status_command))
         self.application.add_handler(CommandHandler("admin_reset", self.admin_reset_week_command))
         self.application.add_handler(CallbackQueryHandler(self.list_callback_handler, pattern="^list_"))
