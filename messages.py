@@ -2,15 +2,21 @@
 
 TEXT = {
     "welcome": (
-        "👋 Hello {first_name}!\n\n"
-        "Welcome to the Social Chat Bot! 🎉\n\n"
-        "This bot helps you find people to hang out with each week.\n\n"
-        "📅 How it works:\n"
-        "• Every week, I'll ask if you want to be social\n"
-        "• Opt in to join this week's pool\n"
-        "• Use the dashboard to review participants and mark dislikes\n"
-        "• You'll get a final match once the matching phase begins\n\n"
-        "Use the buttons below to control everything."
+        """
+        Привет, {first_name}!!
+        Это Social Microdosing Bot, инструмент для улучшения твоей социальной жизни.
+
+        Идея простая: с людьми видеться хочется, но много думать об этом нет ни времени ни сил.
+        Этот бот — как раз попытка автоматизировать встречи и упростить планирование. Есть расписание, есть люди, готовые встретиться, и Великий Рандом!
+
+        Как оно работает:
+        Вторник и четверг — социальные дни.
+        В понедельник и среду бот спросит, хочешь ли ты увидеться завтра.
+        После того, как все ответят, ты получишь список тех, кто тоже готов.
+        Ты можешь оставить список как есть или скрыть тех, с кем пока не хочешь встречаться (об этом никто не узнает).
+        Утром в день встречи бот пришлёт твоего мэтча.
+        А дальше — договаривайтесь в личке, встречайтес, общайтес!
+        """
     ),
     "help": (
         "🤖 Social Chat Bot Buttons:\n\n"
@@ -43,32 +49,24 @@ TEXT = {
         "⚠️ Matching for this week has already started and changes are locked.\n"
         "You weren't part of this week's pool—please come back next week!"
     ),
-    "matching_phase_title": "🎯 Matching Phase ({week_label})",
-    "matching_not_opted": (
-        "You're currently not opted in for this week. Tap the Opt In button below to join."
-    ),
-    "matching_instructions": "Everyone starts liked. Tap 💔 to remove someone or ❤️ to add them back before matching begins.",
-    "optin_phase_instructions": "We're currently collecting opt-ins. Use the Opt In/Opt Out buttons to update your status for this week.",
-    "matching_participants_header": "👥 Opted-in participants:",
+    "matching_not_opted": "Хорошо, увидимся позже)",
+    "matching_participants_header": "Итак, вот список ребят, которые готовы завтра сходить на встречу:",
+    "matching_instructions": "Ты можешь оставить его как есть ИЛИ через кнопки ниже отметить тех, с кем завтра не хочешь увидеться (об этом никто не узнает, просто рандомайзер исключит их из твоих мэтчей)",
+    "matching_waiting_notice": "Редактировать список можно сегодня до 23:59",
     "matching_no_participants": "- No other participants yet. Invite friends to opt in!",
-    "matching_liked": "❤️ Interested",
-    "matching_disliked": "💔 Disliked",
-    "matching_not_liked": "♡ Pending",
+    "matching_liked": "✅",
+    "matching_disliked": "❌",
     "matching_participant_line": "{idx}. {name} — {state}",
-    "matching_matches_header": "💌 Matches",
-    "matching_no_matches": "Sorry, no match this week.",
-    "matching_waiting_notice": "Matching hasn't started yet. Keep reviewing your preferences.",
-    "optin_phase_waiting_notice": "Liking opens soon. You'll be able to manage dislikes in the next phase.",
-    "matching_phase_locked": "✨ Matching for this week has started. Likes are frozen and your final match is below.",
-    "matching_match_line": "{idx}. {you_label} ❤️ {name}",
-    "matching_you_label": "You",
+    "matching_no_matches": "Доброе утро! Великий Рандом перемешал пары, но тебе, к сожалению, не хватило партнера( Возможно на сегодня отметилось слишком мало людей.Может быть это повод проявить активность и самому написать кому-то? Или хороший день, чтобы провести время с собой?Мы скоро вернёмся с приглашением на следующие встречи, stay tuned!",
+    "matching_pair_announcement": "Доброе утро!Сегодня социальный день, и в этот раз твой мэтч — {name}. Самое время написать друг другу и договориться о встрече — позавтракать вместе, выйти на прогулку, поковоркать, it's up to you.Хорошего дня)",
+    "matching_opted_in_waiting": "✅ Супер, ты в списках!Подождём немного ответов других участников и в 19:00  пришлём список тех, кто готов ко встрече",
     "unknown_user": "Unknown",
     "weekly_reminder": (
-        "🔔 Weekly Social Reminder!\n\n"
-        "It's a new week ({week_label})! 🎉\n\n"
-        "Would you like to be social this week?\n\n"
-        "Tap Opt In if you're available or Skip this week if you're busy."
+        "Привет, {first_name}!\n\n"
+        "Завтра — день социального микродозинга. Хочешь приесоединиться?\n\n"
+        "Время решиться есть сегодня до 19:00."
     ),
+    
     "admin_only": "⛔ This command is restricted to admins.",
     "admin_next_phase_liking_sent": "🎬 Liking phase started and sent dashboards to {count} participants.",
     "admin_next_phase_matching_sent": "🚀 Matching phase started and sent dashboards to {count} participants.",
@@ -99,13 +97,13 @@ TEXT = {
 }
 
 BUTTONS = {
-    "unlike": "❤️ {name}",
-    "like": "💔 {name}",
-    "optin": "✅ Opt me in",
-    "optout": "⏭ Skip this week",
-    "optout_final": "🙅 Dislike everyone",
-    "confirm_yes": "Yes",
-    "confirm_no": "No",
+    "unlike": "❌ Скрыть {name}",
+    "like": "🔄 Вернуть {name}",
+    "optin": "✅ Да, погнали",
+    "optout": "⏭ Нет, не в этот раз",
+    "optout_final": "🙅 Скрыть всех",
+    "confirm_yes": "Да",
+    "confirm_no": "Нет",
     "status": "📊 Status",
     "help": "❓ Help",
 }
