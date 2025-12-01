@@ -582,85 +582,61 @@ class SocialChatBot:
         week_label = self._get_current_week_label()
         phase = self._get_week_phase()
         user_opted_in = self._is_user_opted_in(user_id)
-        if not user_opted_in and phase != 'optin':
-            if phase == 'liking':
-                return TEXT["liking_phase_optin_closed"]
-            return TEXT["matching_phase_change_locked_notoptedin"]
-
         participants = self._get_participants()
         participant_lookup = {p['user_id']: p for p in participants}
-        others = [p for p in participants if p['user_id'] != user_id]
-        likes = self._get_user_likes(user_id)
-        dislikes = self._get_user_dislikes(user_id)
-
-        pairings = self._generate_weekly_pairings(participant_lookup) if phase == 'matching' else {}
-        partner_id = pairings.get(user_id) if pairings else None
-        partner = participant_lookup.get(partner_id) if partner_id else None
-        self_participant = participant_lookup.get(user_id)
-        you_label = (
-            self._get_display_name(self_participant)
-            if self_participant else TEXT["matching_you_label"]
-        )
-
-        message = [TEXT['matching_phase_title'].format(week_label=week_label), ""]
-        if phase == 'optin' and not user_opted_in:
-            message.append(TEXT["matching_not_opted"])
-            message.append("")
+        lines: List[str] = []
 
         if phase == 'matching':
-            message.append(TEXT["matching_phase_locked"])
-            message.append("")
-            message.append(TEXT["matching_matches_header"])
-            if not partner:
-                message.append(TEXT["matching_no_matches"])
+            if not user_opted_in:
+                return TEXT["matching_phase_change_locked_notoptedin"]
+            pairings = self._generate_weekly_pairings(participant_lookup)
+            partner_id = pairings.get(user_id)
+            partner = participant_lookup.get(partner_id) if partner_id else None
+            if partner:
+                lines.append(TEXT["matching_pair_announcement"].format(
+                    name=self._get_display_name(partner)
+                ))
             else:
-                name = self._get_display_name(partner)
-                message.append(
-                    TEXT["matching_match_line"].format(
-                        idx=1,
-                        you_label=you_label,
-                        name=name
+                lines.append(TEXT["matching_no_matches"])
+            return "\n".join(lines)
+
+        if phase == 'liking' and not user_opted_in:
+            return TEXT["liking_phase_optin_closed"]
+
+        if phase == 'optin':
+            if not user_opted_in:
+                lines.append(TEXT["matching_not_opted"])
+            else:
+                lines.append(TEXT["matching_opted_in_waiting"])
+            return "\n".join(lines)
+
+        # Liking phase for opted-in users
+        lines.append(TEXT["matching_participants_header"])
+        lines.append("")
+        likes = self._get_user_likes(user_id)
+        dislikes = self._get_user_dislikes(user_id)
+        others = [p for p in participants if p['user_id'] != user_id]
+        if not others:
+            lines.append(TEXT["matching_no_participants"])
+        else:
+            for idx, participant in enumerate(others, 1):
+                participant_id = participant['user_id']
+                if participant_id in dislikes:
+                    state = TEXT["matching_disliked"]
+                elif participant_id in likes:
+                    state = TEXT["matching_liked"]
+                lines.append(
+                    TEXT["matching_participant_line"].format(
+                        idx=idx,
+                        name=self._get_display_name(participant),
+                        state=state
                     )
                 )
-        else:
-            message.append(
-                TEXT["optin_phase_instructions"] if phase == 'optin' else TEXT["matching_instructions"]
-            )
-            message.append("")
-            message.append(TEXT["matching_participants_header"])
-            if not others:
-                message.append(TEXT["matching_no_participants"])
-            else:
-                if phase == 'optin':
-                    for idx, participant in enumerate(others, 1):
-                        name = self._get_display_name(participant)
-                        message.append(f"{idx}. {name}")
-                else:
-                    for idx, participant in enumerate(others, 1):
-                        name = self._get_display_name(participant)
-                        participant_id = participant['user_id']
-                        if participant_id in dislikes:
-                            liked_state = TEXT["matching_disliked"]
-                        elif participant_id in likes:
-                            liked_state = TEXT["matching_liked"]
-                        else:
-                            liked_state = TEXT["matching_not_liked"]
-                        message.append(
-                            TEXT["matching_participant_line"].format(
-                                idx=idx,
-                                name=name,
-                                state=liked_state
-                            )
-                        )
-
-            message.append("")
-            message.append(TEXT["matching_matches_header"])
-            if phase == 'optin':
-                message.append(TEXT["optin_phase_waiting_notice"])
-            else:
-                message.append(TEXT["matching_waiting_notice"])
-
-        return "\n".join(message)
+        lines.append("")
+        lines.append(TEXT["matching_instructions"])
+        lines.append("")
+        lines.append(TEXT["matching_waiting_notice"])
+        return "\n".join(lines)
 
     def _build_matching_keyboard(self, user_id: int) -> InlineKeyboardMarkup:
         """Return inline buttons for liking/unliking and status controls."""
@@ -1139,7 +1115,7 @@ class SocialChatBot:
         
         logger.info(f"Sending weekly reminder to {len(users)} users for week {week}")
         
-        message = TEXT["weekly_reminder"].format(week_label=week_label)
+        message = TEXT["weekly_reminder"]
         
         sent_count = 0
         for user in users:
