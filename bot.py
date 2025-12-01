@@ -534,16 +534,33 @@ class SocialChatBot:
             return f"@{username}"
         return participant.get('first_name') or TEXT["unknown_user"]
 
+    def _build_status_message(self, user_id: int) -> str:
+        week_label = self._get_current_week_label()
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT opted_in FROM weekly_participation
+            WHERE user_id = ? AND week_year = ?
+            ''',
+            (user_id, week)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        status_text = TEXT["status_in"] if result and result[0] == 1 else TEXT["status_out"]
+        return TEXT["status_summary"].format(week_label=week_label, status=status_text)
+
     def _build_matching_phase_message(self, user_id: int) -> str:
         """Construct the matching view text for the user."""
         week_label = self._get_current_week_label()
-        if not self._is_user_opted_in(user_id):
-            return (
-                f"{TEXT['matching_phase_title'].format(week_label=week_label)}\n\n"
-                f"{TEXT['matching_not_opted']}"
-            )
-
         phase = self._get_week_phase()
+        user_opted_in = self._is_user_opted_in(user_id)
+        if not user_opted_in and phase != 'optin':
+            if phase == 'liking':
+                return TEXT["liking_phase_optin_closed"]
+            return TEXT["matching_phase_change_locked_notoptedin"]
+
         participants = self._get_participants()
         participant_lookup = {p['user_id']: p for p in participants}
         others = [p for p in participants if p['user_id'] != user_id]
@@ -560,6 +577,9 @@ class SocialChatBot:
         )
 
         message = [TEXT['matching_phase_title'].format(week_label=week_label), ""]
+        if phase == 'optin' and not user_opted_in:
+            message.append(TEXT["matching_not_opted"])
+            message.append("")
 
         if phase == 'matching':
             message.append(TEXT["matching_phase_locked"])
@@ -619,12 +639,29 @@ class SocialChatBot:
     def _build_matching_keyboard(self, user_id: int) -> InlineKeyboardMarkup:
         """Return inline buttons for liking/unliking and status controls."""
         phase = self._get_week_phase()
+
+        if phase == 'optin':
+            opted_in = self._is_user_opted_in(user_id)
+            buttons = []
+            if opted_in:
+                buttons.append([
+                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
+                ])
+            else:
+                buttons.append([
+                    InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin")
+                ])
+            buttons.append([
+                InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")
+            ])
+            return InlineKeyboardMarkup(buttons)
+
         if not self._is_user_opted_in(user_id):
             return InlineKeyboardMarkup([
                 [InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")]
             ])
 
-        if phase == 'matching' or phase == 'optin':
+        if phase == 'matching':
             return InlineKeyboardMarkup([
                 [InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")]
             ])
@@ -632,6 +669,11 @@ class SocialChatBot:
         participants = [p for p in self._get_participants() if p['user_id'] != user_id]
         dislikes = self._get_user_dislikes(user_id)
         buttons: List[List[InlineKeyboardButton]] = []
+
+        if phase == 'liking':
+            buttons.append([
+                InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_optout")
+            ])
 
         for participant in participants:
             name = self._get_display_name(participant)
@@ -655,6 +697,35 @@ class SocialChatBot:
             InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")
         ])
 
+        return InlineKeyboardMarkup(buttons)
+
+    def _build_main_menu_keyboard(self, user_id: int) -> InlineKeyboardMarkup:
+        """Return inline buttons for global user actions."""
+        phase = self._get_week_phase()
+        opted_in = self._is_user_opted_in(user_id)
+        buttons: List[List[InlineKeyboardButton]] = []
+
+        if phase == 'optin':
+            if opted_in:
+                buttons.append([
+                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
+                ])
+            else:
+                buttons.append([
+                    InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin")
+                ])
+        elif phase == 'liking' and opted_in:
+            buttons.append([
+                InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_optout")
+            ])
+
+        buttons.append([
+            InlineKeyboardButton(BUTTONS["dashboard"], callback_data="list_refresh")
+        ])
+        buttons.append([
+            InlineKeyboardButton(BUTTONS["status"], callback_data="list_status"),
+            InlineKeyboardButton(BUTTONS["help"], callback_data="list_help")
+        ])
         return InlineKeyboardMarkup(buttons)
     
     def _get_all_active_users(self) -> List[Dict]:
@@ -849,13 +920,19 @@ class SocialChatBot:
         
         welcome_message = TEXT["welcome"].format(first_name=user.first_name)
         
-        await update.message.reply_text(welcome_message)
+        await update.message.reply_text(
+            welcome_message,
+            reply_markup=self._build_main_menu_keyboard(user.id)
+        )
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command."""
         help_message = TEXT["help"]
         
-        await update.message.reply_text(help_message)
+        await update.message.reply_text(
+            help_message,
+            reply_markup=self._build_main_menu_keyboard(update.effective_user.id)
+        )
     
     async def optin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /optin command."""
@@ -919,32 +996,12 @@ class SocialChatBot:
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /status command."""
         user = update.effective_user
-        week = self._get_current_week()
-        week_label = self._get_current_week_label()
-        week_label = self._get_current_week_label()
+        message = self._build_status_message(user.id)
         
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT opted_in FROM weekly_participation
-            WHERE user_id = ? AND week_year = ?
-        ''', (user.id, week))
-        
-        result = cursor.fetchone()
-        conn.close()
-        
-        if result and result[0] == 1:
-            status_text = TEXT["status_in"]
-        else:
-            status_text = TEXT["status_out"]
-        
-        message = TEXT["status_summary"].format(
-            week_label=week_label,
-            status=status_text
+        await update.message.reply_text(
+            message,
+            reply_markup=self._build_main_menu_keyboard(user.id)
         )
-        
-        await update.message.reply_text(message)
     
     async def list_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /list command - show all participants for this week."""
@@ -963,7 +1020,20 @@ class SocialChatBot:
         liking_active = self._get_week_phase() == 'liking'
 
         response = ""
-        if action.startswith("list_like_"):
+        if action == "list_optin":
+            if self._get_week_phase() != 'optin':
+                await query.answer(ALERTS["optin_phase_only"], show_alert=True)
+                return
+            self._set_user_participation(user_id, True)
+            response = RESPONSES["optin_set"]
+        elif action == "list_optout":
+            phase = self._get_week_phase()
+            if phase not in ('optin', 'liking'):
+                await query.answer(ALERTS["optin_phase_only"], show_alert=True)
+                return
+            self._set_user_participation(user_id, False)
+            response = RESPONSES["optout_set"]
+        elif action.startswith("list_like_"):
             if matching_locked:
                 await query.answer(ALERTS["matching_locked"], show_alert=True)
                 return
@@ -987,6 +1057,19 @@ class SocialChatBot:
                 await query.answer(ALERTS["dislike_failed"], show_alert=True)
                 return
             response = RESPONSES["dislike_success"]
+        elif action == "list_status":
+            status_text = self._build_status_message(user_id)
+            await query.message.reply_text(
+                status_text,
+                reply_markup=self._build_main_menu_keyboard(user_id)
+            )
+            response = RESPONSES["done"]
+        elif action == "list_help":
+            await query.message.reply_text(
+                TEXT["help"],
+                reply_markup=self._build_main_menu_keyboard(user_id)
+            )
+            response = RESPONSES["done"]
         elif action == "list_refresh":
             response = RESPONSES["refresh"]
         else:
@@ -1019,7 +1102,8 @@ class SocialChatBot:
             try:
                 await bot.send_message(
                     chat_id=user['chat_id'],
-                    text=message
+                    text=message,
+                    reply_markup=self._build_main_menu_keyboard(user['user_id'])
                 )
                 sent_count += 1
             except Exception as e:

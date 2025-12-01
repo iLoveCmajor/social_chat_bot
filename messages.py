@@ -7,23 +7,17 @@ TEXT = {
         "This bot helps you find people to hang out with each week.\n\n"
         "📅 How it works:\n"
         "• Every week, I'll ask if you want to be social\n"
-        "• If you opt in, you'll get a list of others who also want to hang out\n"
-        "• Connect with them and have fun!\n\n"
-        "Commands:\n"
-        "/optin - Opt in for this week's social matching\n"
-        "/optout - Opt out for this week\n"
-        "/status - Check your current status\n"
-        "/list - See who's available this week\n"
-        "/help - Show this message again"
+        "• Opt in to join this week's pool\n"
+        "• Use the dashboard to review participants and mark dislikes\n"
+        "• You'll get a final match once the matching phase begins\n\n"
+        "Use the buttons below to control everything."
     ),
     "help": (
-        "🤖 Social Chat Bot Commands:\n\n"
-        "/start - Start the bot and register\n"
-        "/optin - Opt in for this week's social matching\n"
-        "/optout - Opt out for this week\n"
-        "/status - Check your current participation status\n"
-        "/list - See who's available to hang out this week\n"
-        "/help - Show this help message\n\n"
+        "🤖 Social Chat Bot Buttons:\n\n"
+        "• Opt In / Opt Out — control your participation\n"
+        "• Dashboard — see who's in and manage dislikes\n"
+        "• Status — check whether you're in or out this week\n"
+        "• Help — view this message again\n\n"
         "You'll receive weekly reminders to participate!"
     ),
     "optin_confirmation": (
@@ -32,14 +26,14 @@ TEXT = {
     ),
     "optout_confirmation": (
         "👋 No problem! You've opted out for this week.\n\n"
-        "You can use /optin anytime to join again!"
+        "Use the Opt In button anytime to join again!"
     ),
     "status_in": "✅ You're IN for this week's social matching!",
     "status_out": "❌ You're currently opted out for this week.",
     "status_summary": (
         "📊 Your Status ({week_label}):\n\n"
         "{status}\n\n"
-        "Use /optin or /optout to change your status."
+        "Use the Opt In/Opt Out buttons to change your status."
     ),
     "matching_phase_change_locked_optedin": (
         "⚠️ Matching for this week is already in progress, so changes are locked.\n"
@@ -51,10 +45,10 @@ TEXT = {
     ),
     "matching_phase_title": "🎯 Matching Phase ({week_label})",
     "matching_not_opted": (
-        "You're currently not opted in for this week. Use /optin to join the matching phase."
+        "You're currently not opted in for this week. Tap the Opt In button below to join."
     ),
     "matching_instructions": "Everyone starts liked. Tap 💔 to remove someone or ❤️ to add them back before matching begins.",
-    "optin_phase_instructions": "We're currently collecting opt-ins. Use /optin or /optout to update your status for this week.",
+    "optin_phase_instructions": "We're currently collecting opt-ins. Use the Opt In/Opt Out buttons to update your status for this week.",
     "matching_participants_header": "👥 Opted-in participants:",
     "matching_no_participants": "- No other participants yet. Invite friends to opt in!",
     "matching_liked": "❤️ Interested",
@@ -73,12 +67,8 @@ TEXT = {
         "🔔 Weekly Social Reminder!\n\n"
         "It's a new week ({week_label})! 🎉\n\n"
         "Would you like to be social this week?\n\n"
-        "If yes, use /optin to join!\n"
-        "You'll get a list of others who want to hang out too.\n\n"
-        "Commands:\n"
-        "/optin - I want to be social! ✅\n"
-        "/optout - Not this week ❌\n"
-        "/list - See who's already signed up"
+        "Tap Opt In if you're available or Opt Out if you're busy.\n"
+        "Use the Dashboard button to see who else has joined."
     ),
     "admin_only": "⛔ This command is restricted to admins.",
     "admin_next_phase_liking_sent": "🎬 Liking phase started and sent dashboards to {count} participants.",
@@ -104,12 +94,18 @@ TEXT = {
     "admin_list_unmatched_line": "• {name}",
     "admin_list_unmatched_none": "Everyone received a match this week!",
     "liking_phase_optin_closed": "Opt-ins are closed while the liking phase is in progress. Please come back next week!",
-    "liking_phase_already_in": "Liking phase is underway and you're already participating. Use /list to manage dislikes or /optout to leave.",
+    "liking_phase_already_in": "Liking phase is underway and you're already participating. Use the dashboard to manage dislikes or tap Opt Out to leave.",
 }
 
 BUTTONS = {
     "unlike": "💔 Dislike {name}",
     "like": "❤️ Like {name}",
+    "optin": "✅ Opt me in",
+    "optout": "🚫 Opt me out",
+    "optout_final": "🚫 Opt me out (irreversible)",
+    "dashboard": "📋 Dashboard",
+    "status": "📊 Status",
+    "help": "❓ Help",
     "refresh": "Refresh 🔄",
 }
 
@@ -117,6 +113,8 @@ RESPONSES = {
     "like_success": "Liked!",
     "dislike_success": "Marked as disliked.",
     "dislike_removed": "Removed dislike.",
+    "optin_set": "You're in for this week!",
+    "optout_set": "You're out for this week.",
     "refresh": "Lists refreshed.",
     "unknown": "Unknown action.",
     "done": "Done.",
@@ -127,4 +125,5 @@ ALERTS = {
     "dislike_failed": "Could not update dislike.",
     "matching_locked": "Matching is already in progress this week. Likes are closed.",
     "liking_locked": "Preference changes are only available during the liking phase.",
+    "optin_phase_only": "Opt-in controls are only available during the opt-in phase.",
 }
