@@ -53,7 +53,8 @@ TEXT = {
     "matching_not_opted": (
         "You're currently not opted in for this week. Use /optin to join the matching phase."
     ),
-    "matching_instructions": "Everyone starts liked. Tap 💔 to dislike someone you don't want to match with.",
+    "matching_instructions": "Everyone starts liked. Tap 💔 to remove someone or ❤️ to add them back before matching begins.",
+    "optin_phase_instructions": "We're currently collecting opt-ins. Use /optin or /optout to update your status for this week.",
     "matching_participants_header": "👥 Opted-in participants:",
     "matching_no_participants": "- No other participants yet. Invite friends to opt in!",
     "matching_liked": "❤️ Interested",
@@ -62,7 +63,8 @@ TEXT = {
     "matching_participant_line": "{idx}. {name} — {state}",
     "matching_matches_header": "💌 Matches",
     "matching_no_matches": "Sorry, no match this week.",
-    "matching_waiting_notice": "In the next phase you will be matched with one of the users you liked (If possible)./nFor now feel free to review and adjust your likes.",
+    "matching_waiting_notice": "Matching hasn't started yet. Keep reviewing your preferences.",
+    "optin_phase_waiting_notice": "Liking opens soon. You'll be able to manage dislikes in the next phase.",
     "matching_phase_locked": "✨ Matching for this week has started. Likes are frozen and your final match is below.",
     "matching_match_line": "{idx}. {you_label} ❤️ {name}",
     "matching_you_label": "You",
@@ -79,8 +81,9 @@ TEXT = {
         "/list - See who's already signed up"
     ),
     "admin_only": "⛔ This command is restricted to admins.",
-    "admin_next_phase_sent": "🚀 Matching phase started and sent dashboards to {count} participants.",
-    "admin_next_phase_none": "ℹ️ No opted-in participants to move into matching yet.",
+    "admin_next_phase_liking_sent": "🎬 Liking phase started and sent dashboards to {count} participants.",
+    "admin_next_phase_matching_sent": "🚀 Matching phase started and sent dashboards to {count} participants.",
+    "admin_next_phase_none": "ℹ️ No opted-in participants to move forward yet.",
     "admin_next_phase_blocked": "⚠️ Matching is already active. Use /admin_reset to restart the cycle.",
     "admin_reset": "🔄 Restarted {week_label}: cleared {count} participation record(s) and sent reminders to {notified} active user(s).",
     "admin_status": (
@@ -100,6 +103,8 @@ TEXT = {
     "admin_list_unmatched_header": "🙋 Unmatched participants:",
     "admin_list_unmatched_line": "• {name}",
     "admin_list_unmatched_none": "Everyone received a match this week!",
+    "liking_phase_optin_closed": "Opt-ins are closed while the liking phase is in progress. Please come back next week!",
+    "liking_phase_already_in": "Liking phase is underway and you're already participating. Use /list to manage dislikes or /optout to leave.",
 }
 
 BUTTONS = {
@@ -121,4 +126,5 @@ ALERTS = {
     "like_requires_optin": "Both users must be opted in before liking.",
     "dislike_failed": "Could not update dislike.",
     "matching_locked": "Matching is already in progress this week. Likes are closed.",
+    "liking_locked": "Preference changes are only available during the liking phase.",
 }

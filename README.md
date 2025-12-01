@@ -19,8 +19,11 @@ A Telegram bot that helps people find weekly social partners. The bot sends week
 1. Users start the bot with `/start` and get registered
 2. Every week (configurable day/time), the bot sends a reminder asking if users want to be social
 3. Users opt in with `/optin` or opt out with `/optout`
-4. At a scheduled time, all opted-in users receive a list of other participants
-5. Users can reach out to each other to plan activities
+4. Admins advance the process through three phases:
+   - **Opt-in phase** – people can only /optin or /optout and view the roster
+   - **Liking phase** – the roster locks, everyone begins liked by default, and participants can dislike specific people
+   - **Matching phase** – likes freeze and each person sees their final match (or a “no match” notice)
+5. Users can reach out to each other to plan activities once matches are announced
 
 ## Installation
 
@@ -102,6 +105,8 @@ Edit `config.json` to customize the bot behavior:
   "bot_token": "YOUR_BOT_TOKEN_HERE",
   "reminder_day": 0,
   "reminder_time": "09:00",
+  "liking_day": 0,
+  "liking_time": "11:00",
   "matching_day": 0,
   "matching_time": "12:00",
   "admin_ids": [
@@ -114,6 +119,8 @@ Edit `config.json` to customize the bot behavior:
 - `bot_token`: Your Telegram bot token (required)
 - `reminder_day`: Day of week for reminders (0=Monday, 6=Sunday)
 - `reminder_time`: Time to send reminders (24-hour format, e.g., "09:00")
+- `liking_day`: Day of week for the liking-phase broadcast (0=Monday, 6=Sunday)
+- `liking_time`: Time to send the liking-phase dashboards (24-hour format, e.g., "11:00")
 - `matching_day`: Day of week to send participant lists (0=Monday, 6=Sunday)
 - `matching_time`: Time to send participant lists (24-hour format, e.g., "12:00")
 - `admin_ids`: List of Telegram user IDs allowed to use admin commands (optional). You can also set the `ADMIN_IDS` env var with a comma-separated list, e.g., `export ADMIN_IDS="111,222"`.
@@ -141,7 +148,7 @@ Once the bot is running, users can interact with it using these commands:
 
 **Admin Commands** (restricted to IDs in `admin_ids` / `ADMIN_IDS`):
 
-- `/admin_next_phase` - Advance from the opt-in phase to matching (if matching is already active, it tells you to reset instead)
+- `/admin_next_phase` - Advance to the next phase (opt-in ➜ liking ➜ matching); if matching is already active, it tells you to reset instead
 - `/admin_list` - Show a full overview: during opt-in see each participant with their likes/dislikes, during matching see all matches and anyone still unmatched
 - `/admin_status` - See how many users are active/opted-in/opted-out for the current week
 - `/admin_reset` - Reset the current week and send a fresh opt-in reminder to everyone

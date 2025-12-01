@@ -121,9 +121,18 @@ class SocialChatBot:
             CREATE TABLE IF NOT EXISTS weekly_state (
                 week_year TEXT PRIMARY KEY,
                 is_matching_phase INTEGER DEFAULT 0,
-                matching_started_at DATETIME
+                matching_started_at DATETIME,
+                phase TEXT DEFAULT 'optin',
+                phase_started_at DATETIME
             )
         ''')
+
+        cursor.execute("PRAGMA table_info(weekly_state)")
+        ws_columns = [row[1] for row in cursor.fetchall()]
+        if 'phase' not in ws_columns:
+            cursor.execute("ALTER TABLE weekly_state ADD COLUMN phase TEXT DEFAULT 'optin'")
+        if 'phase_started_at' not in ws_columns:
+            cursor.execute("ALTER TABLE weekly_state ADD COLUMN phase_started_at DATETIME")
 
         conn.commit()
         conn.close()
@@ -271,7 +280,7 @@ class SocialChatBot:
         """Like or unlike another user. Returns True if applied."""
         if user_id == target_user_id:
             return False
-        if self._is_matching_phase_active():
+        if self._get_week_phase() != 'liking':
             return False
         week = self._get_current_week()
         conn = sqlite3.connect(self.db_path)
@@ -376,7 +385,7 @@ class SocialChatBot:
         """Mark/unmark a target as disliked. Returns True if applied."""
         if user_id == target_user_id:
             return False
-        if self._is_matching_phase_active():
+        if self._get_week_phase() != 'liking':
             return False
         week = self._get_current_week()
         conn = sqlite3.connect(self.db_path)
@@ -534,14 +543,14 @@ class SocialChatBot:
                 f"{TEXT['matching_not_opted']}"
             )
 
+        phase = self._get_week_phase()
         participants = self._get_participants()
         participant_lookup = {p['user_id']: p for p in participants}
         others = [p for p in participants if p['user_id'] != user_id]
         likes = self._get_user_likes(user_id)
         dislikes = self._get_user_dislikes(user_id)
-        matching_phase_active = self._is_matching_phase_active()
 
-        pairings = self._generate_weekly_pairings(participant_lookup) if matching_phase_active else {}
+        pairings = self._generate_weekly_pairings(participant_lookup) if phase == 'matching' else {}
         partner_id = pairings.get(user_id) if pairings else None
         partner = participant_lookup.get(partner_id) if partner_id else None
         self_participant = participant_lookup.get(user_id)
@@ -552,7 +561,7 @@ class SocialChatBot:
 
         message = [TEXT['matching_phase_title'].format(week_label=week_label), ""]
 
-        if matching_phase_active:
+        if phase == 'matching':
             message.append(TEXT["matching_phase_locked"])
             message.append("")
             message.append(TEXT["matching_matches_header"])
@@ -568,43 +577,54 @@ class SocialChatBot:
                     )
                 )
         else:
-            message.append(TEXT["matching_instructions"])
+            message.append(
+                TEXT["optin_phase_instructions"] if phase == 'optin' else TEXT["matching_instructions"]
+            )
             message.append("")
             message.append(TEXT["matching_participants_header"])
             if not others:
                 message.append(TEXT["matching_no_participants"])
             else:
-                for idx, participant in enumerate(others, 1):
-                    name = self._get_display_name(participant)
-                    participant_id = participant['user_id']
-                    if participant_id in dislikes:
-                        liked_state = TEXT["matching_disliked"]
-                    elif participant_id in likes:
-                        liked_state = TEXT["matching_liked"]
-                    else:
-                        liked_state = TEXT["matching_not_liked"]
-                    message.append(
-                        TEXT["matching_participant_line"].format(
-                            idx=idx,
-                            name=name,
-                            state=liked_state
+                if phase == 'optin':
+                    for idx, participant in enumerate(others, 1):
+                        name = self._get_display_name(participant)
+                        message.append(f"{idx}. {name}")
+                else:
+                    for idx, participant in enumerate(others, 1):
+                        name = self._get_display_name(participant)
+                        participant_id = participant['user_id']
+                        if participant_id in dislikes:
+                            liked_state = TEXT["matching_disliked"]
+                        elif participant_id in likes:
+                            liked_state = TEXT["matching_liked"]
+                        else:
+                            liked_state = TEXT["matching_not_liked"]
+                        message.append(
+                            TEXT["matching_participant_line"].format(
+                                idx=idx,
+                                name=name,
+                                state=liked_state
+                            )
                         )
-                    )
 
             message.append("")
             message.append(TEXT["matching_matches_header"])
-            message.append(TEXT["matching_waiting_notice"])
+            if phase == 'optin':
+                message.append(TEXT["optin_phase_waiting_notice"])
+            else:
+                message.append(TEXT["matching_waiting_notice"])
 
         return "\n".join(message)
 
     def _build_matching_keyboard(self, user_id: int) -> InlineKeyboardMarkup:
         """Return inline buttons for liking/unliking and status controls."""
+        phase = self._get_week_phase()
         if not self._is_user_opted_in(user_id):
             return InlineKeyboardMarkup([
                 [InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")]
             ])
 
-        if self._is_matching_phase_active():
+        if phase == 'matching' or phase == 'optin':
             return InlineKeyboardMarkup([
                 [InlineKeyboardButton(BUTTONS["refresh"], callback_data="list_refresh")]
             ])
@@ -743,14 +763,14 @@ class SocialChatBot:
             'pending': pending
         }
 
-    def _is_matching_phase_active(self) -> bool:
-        """Return True if the current week is in the matching phase."""
+    def _get_week_phase(self) -> str:
+        """Return current phase identifier: optin, liking, or matching."""
         week = self._get_current_week()
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute(
             '''
-            SELECT is_matching_phase
+            SELECT phase, is_matching_phase
             FROM weekly_state
             WHERE week_year = ?
             ''',
@@ -758,26 +778,49 @@ class SocialChatBot:
         )
         row = cursor.fetchone()
         conn.close()
-        return bool(row and row[0] == 1)
+        if not row:
+            return 'optin'
+        phase, is_matching = row
+        if phase:
+            return phase
+        return 'matching' if (is_matching == 1) else 'optin'
 
-    def _start_matching_phase(self):
-        """Mark the current week as being in the matching phase."""
+    def _set_week_phase(self, phase: str):
+        """Persist the current weekly phase."""
+        valid_phases = {'optin', 'liking', 'matching'}
+        if phase not in valid_phases:
+            raise ValueError(f"Invalid phase: {phase}")
+
         week = self._get_current_week()
+        is_matching = 1 if phase == 'matching' else 0
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute(
             '''
-            INSERT INTO weekly_state (week_year, is_matching_phase, matching_started_at)
-            VALUES (?, 1, CURRENT_TIMESTAMP)
+            INSERT INTO weekly_state (week_year, is_matching_phase, matching_started_at, phase, phase_started_at)
+            VALUES (?, ?, CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE NULL END, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(week_year)
             DO UPDATE SET
-                is_matching_phase = 1,
-                matching_started_at = CURRENT_TIMESTAMP
+                is_matching_phase = excluded.is_matching_phase,
+                matching_started_at = CASE
+                    WHEN excluded.is_matching_phase = 1 THEN CURRENT_TIMESTAMP
+                    ELSE matching_started_at
+                END,
+                phase = excluded.phase,
+                phase_started_at = CURRENT_TIMESTAMP
             ''',
-            (week,)
+            (week, is_matching, is_matching, phase)
         )
         conn.commit()
         conn.close()
+
+    def _is_matching_phase_active(self) -> bool:
+        """Return True if the current week is in the matching phase."""
+        return self._get_week_phase() == 'matching'
+
+    def _start_matching_phase(self):
+        """Mark the current week as being in the matching phase."""
+        self._set_week_phase('matching')
 
     def _reset_matching_phase(self):
         """Clear any stored matching phase marker for the current week."""
@@ -818,7 +861,9 @@ class SocialChatBot:
         """Handle /optin command."""
         user = update.effective_user
         chat_id = update.effective_chat.id
-        if self._is_matching_phase_active():
+        phase = self._get_week_phase()
+
+        if phase == 'matching':
             if self._is_user_opted_in(user.id):
                 await update.message.reply_text(TEXT["matching_phase_change_locked_optedin"])
                 matching_message = self._build_matching_phase_message(user.id)
@@ -826,6 +871,15 @@ class SocialChatBot:
                 await update.message.reply_text(matching_message, reply_markup=reply_markup)
             else:
                 await update.message.reply_text(TEXT["matching_phase_change_locked_notoptedin"])
+            return
+        if phase == 'liking':
+            if self._is_user_opted_in(user.id):
+                await update.message.reply_text(TEXT["liking_phase_already_in"])
+                matching_message = self._build_matching_phase_message(user.id)
+                reply_markup = self._build_matching_keyboard(user.id)
+                await update.message.reply_text(matching_message, reply_markup=reply_markup)
+            else:
+                await update.message.reply_text(TEXT["liking_phase_optin_closed"])
             return
         
         # Ensure user is in database
@@ -906,11 +960,15 @@ class SocialChatBot:
         action = query.data
         user_id = query.from_user.id
         matching_locked = self._is_matching_phase_active()
+        liking_active = self._get_week_phase() == 'liking'
 
         response = ""
         if action.startswith("list_like_"):
             if matching_locked:
                 await query.answer(ALERTS["matching_locked"], show_alert=True)
+                return
+            if not liking_active:
+                await query.answer(ALERTS["liking_locked"], show_alert=True)
                 return
             target_id = int(action.split('_')[-1])
             if not self._set_dislike_status(user_id, target_id, False):
@@ -920,6 +978,9 @@ class SocialChatBot:
         elif action.startswith("list_unlike_"):
             if matching_locked:
                 await query.answer(ALERTS["matching_locked"], show_alert=True)
+                return
+            if not liking_active:
+                await query.answer(ALERTS["liking_locked"], show_alert=True)
                 return
             target_id = int(action.split('_')[-1])
             if not self._set_dislike_status(user_id, target_id, True):
@@ -943,6 +1004,7 @@ class SocialChatBot:
     
     async def send_weekly_reminder(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send weekly reminder to all active users."""
+        self._set_week_phase('optin')
         users = self._get_all_active_users()
         week = self._get_current_week()
         week_label = self._get_current_week_label()
@@ -965,18 +1027,17 @@ class SocialChatBot:
         
         return sent_count
     
-    async def send_participant_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
-        """Send list of participants to all who opted in."""
-        self._start_matching_phase()
+    async def _broadcast_phase_dashboards(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
+        """Send the current phase dashboard to opted-in users."""
         participants = self._get_participants()
         week = self._get_current_week()
         bot = self._get_bot(context)
-        
+
         if not participants:
             logger.info(f"No participants for week {week}, skipping list distribution")
             return
         
-        logger.info(f"Sending participant list to {len(participants)} users for week {week}")
+        logger.info(f"Sending phase dashboard ({self._get_week_phase()}) to {len(participants)} users for week {week}")
         
         # Send to all participants
         sent_count = 0
@@ -993,18 +1054,44 @@ class SocialChatBot:
         
         return sent_count
 
+    async def send_participant_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
+        """Send final matches (matching phase) to all participants."""
+        self._start_matching_phase()
+        return await self._broadcast_phase_dashboards(context)
+
+    async def send_liking_phase_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
+        """Send liking phase dashboards to opted-in users."""
+        self._set_week_phase('liking')
+        return await self._broadcast_phase_dashboards(context)
+
     async def admin_next_phase_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Advance the weekly process to the next phase."""
         if not await self._ensure_admin(update):
             return
 
-        if self._is_matching_phase_active():
+        phase = self._get_week_phase()
+        participants = self._get_participants()
+
+        if not participants:
+            await update.message.reply_text(TEXT["admin_next_phase_none"])
+            return
+
+        if phase == 'matching':
             await update.message.reply_text(TEXT["admin_next_phase_blocked"])
             return
 
+        if phase == 'optin':
+            sent = await self.send_liking_phase_list(context)
+            if sent:
+                await update.message.reply_text(TEXT["admin_next_phase_liking_sent"].format(count=sent))
+            else:
+                await update.message.reply_text(TEXT["admin_next_phase_none"])
+            return
+
+        # phase == 'liking'
         sent = await self.send_participant_list(context)
         if sent:
-            await update.message.reply_text(TEXT["admin_next_phase_sent"].format(count=sent))
+            await update.message.reply_text(TEXT["admin_next_phase_matching_sent"].format(count=sent))
         else:
             await update.message.reply_text(TEXT["admin_next_phase_none"])
 
@@ -1147,11 +1234,14 @@ class SocialChatBot:
         # Schedule weekly reminder and matching
         reminder_day = self.config.get('reminder_day', 0)  # Monday by default
         reminder_time_str = self.config.get('reminder_time', '09:00')
+        liking_day = self.config.get('liking_day', reminder_day)
+        liking_time_str = self.config.get('liking_time', '11:00')
         matching_day = self.config.get('matching_day', 0)  # Monday by default
         matching_time_str = self.config.get('matching_time', '12:00')
         
         # Parse times
         reminder_hour, reminder_minute = map(int, reminder_time_str.split(':'))
+        liking_hour, liking_minute = map(int, liking_time_str.split(':'))
         matching_hour, matching_minute = map(int, matching_time_str.split(':'))
         
         # Add jobs to scheduler
@@ -1159,6 +1249,12 @@ class SocialChatBot:
             self.send_weekly_reminder,
             CronTrigger(day_of_week=reminder_day, hour=reminder_hour, minute=reminder_minute),
             id='weekly_reminder'
+        )
+
+        self.scheduler.add_job(
+            self.send_liking_phase_list,
+            CronTrigger(day_of_week=liking_day, hour=liking_hour, minute=liking_minute),
+            id='send_liking_phase'
         )
         
         self.scheduler.add_job(
