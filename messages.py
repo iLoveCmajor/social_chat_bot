@@ -92,8 +92,6 @@ TEXT = {
     "admin_list_unmatched_none": "Everyone received a match this week!",
     "liking_phase_optin_closed": "Opt-ins are closed while the liking phase is in progress. Please come back next week!",
     "liking_phase_already_in": "Liking phase is underway and you're already participating. Use the buttons to manage dislikes or tap Dislike Everyone to avoid matches.",
-    "dislike_all_confirm": "Are you sure you want to mark everyone as disliked for this week? You will not be matched.",
-    "dislike_all_done": "You're set to skip matching this week.",
 }
 
 BUTTONS = {
@@ -102,8 +100,6 @@ BUTTONS = {
     "optin": "✅ Да, погнали",
     "optout": "⏭ Нет, не в этот раз",
     "optout_final": "🙅 Скрыть всех",
-    "confirm_yes": "Да",
-    "confirm_no": "Нет",
     "status": "📊 Status",
     "help": "❓ Help",
 }

@@ -671,11 +671,6 @@ class SocialChatBot:
         dislikes = self._get_user_dislikes(user_id)
         buttons: List[List[InlineKeyboardButton]] = []
 
-        if phase == 'liking':
-            buttons.append([
-                InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_optout")
-            ])
-
         for participant in participants:
             name = self._get_display_name(participant)
             pid = participant['user_id']
@@ -693,6 +688,11 @@ class SocialChatBot:
                         callback_data=f"list_unlike_{pid}"
                     )
                 ])
+
+        if phase == 'liking':
+            buttons.append([
+                InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_optout")
+            ])
 
         return InlineKeyboardMarkup(buttons)
 
@@ -1050,28 +1050,11 @@ class SocialChatBot:
                 await query.answer(ALERTS["optin_phase_only"], show_alert=True)
                 return
             if phase == 'liking':
-                confirm_keyboard = InlineKeyboardMarkup([
-                    [
-                        InlineKeyboardButton(BUTTONS["confirm_yes"], callback_data="list_dislike_all_yes"),
-                        InlineKeyboardButton(BUTTONS["confirm_no"], callback_data="list_dislike_all_no")
-                    ]
-                ])
-                await query.message.reply_text(
-                    TEXT["dislike_all_confirm"],
-                    reply_markup=confirm_keyboard
-                )
-                await query.answer(RESPONSES["done"])
-                return
-            self._set_user_participation(user_id, False)
-            response = RESPONSES["optout_set"]
-        elif action == "list_dislike_all_yes":
-            if self._get_week_phase() != 'liking':
-                await query.answer(ALERTS["optin_phase_only"], show_alert=True)
-                return
-            self._dislike_all_participants(user_id)
-            response = RESPONSES["dislike_all_set"]
-        elif action == "list_dislike_all_no":
-            response = RESPONSES["done"]
+                self._dislike_all_participants(user_id)
+                response = RESPONSES["dislike_all_set"]
+            else:
+                self._set_user_participation(user_id, False)
+                response = RESPONSES["optout_set"]
         elif action.startswith("list_like_"):
             if matching_locked:
                 await query.answer(ALERTS["matching_locked"], show_alert=True)
