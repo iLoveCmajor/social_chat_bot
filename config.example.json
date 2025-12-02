@@ -2,11 +2,11 @@
 # Copy this to config.json and fill in your bot token
 {
   "bot_token": "YOUR_BOT_TOKEN_HERE",
-  "reminder_day": 0,
+  "reminder_days": [0, 2],
   "reminder_time": "09:00",
-  "liking_day": 0,
+  "liking_days": [0, 2],
   "liking_time": "11:00",
-  "matching_day": 0,
+  "matching_days": [0, 2],
   "matching_time": "12:00",
   "admin_ids": [
     123456789

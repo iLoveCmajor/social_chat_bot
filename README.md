@@ -103,11 +103,11 @@ Edit `config.json` to customize the bot behavior:
 ```json
 {
   "bot_token": "YOUR_BOT_TOKEN_HERE",
-  "reminder_day": 0,
+  "reminder_days": [0, 2],
   "reminder_time": "09:00",
-  "liking_day": 0,
+  "liking_days": [0, 2],
   "liking_time": "11:00",
-  "matching_day": 0,
+  "matching_days": [0, 2],
   "matching_time": "12:00",
   "admin_ids": [
     123456789
@@ -117,11 +117,11 @@ Edit `config.json` to customize the bot behavior:
 
 **Configuration Options:**
 - `bot_token`: Your Telegram bot token (required)
-- `reminder_day`: Day of week for reminders (0=Monday, 6=Sunday)
+- `reminder_days`: Day(s) of the week for reminders (0=Monday, 6=Sunday). Accepts a single number or an array (e.g., `[0,2]` for Monday and Wednesday).
 - `reminder_time`: Time to send reminders (24-hour format, e.g., "09:00")
-- `liking_day`: Day of week for the liking-phase broadcast (0=Monday, 6=Sunday)
+- `liking_days`: Day(s) to send the liking-phase dashboard (same format as `reminder_days`)
 - `liking_time`: Time to send the liking-phase dashboards (24-hour format, e.g., "11:00")
-- `matching_day`: Day of week to send participant lists (0=Monday, 6=Sunday)
+- `matching_days`: Day(s) to send matches (same format as `reminder_days`)
 - `matching_time`: Time to send participant lists (24-hour format, e.g., "12:00")
 - `admin_ids`: List of Telegram user IDs allowed to use admin commands (optional). You can also set the `ADMIN_IDS` env var with a comma-separated list, e.g., `export ADMIN_IDS="111,222"`.
 

@@ -66,6 +66,7 @@ class SocialChatBot:
         self.application = None
         self.admin_ids: Set[int] = set(config.get('admin_ids', []))
         self._init_database()
+        self.scheduler_jobs: List[str] = []
     
     def _init_database(self):
         """Initialize SQLite database for storing user data."""
@@ -726,6 +727,24 @@ class SocialChatBot:
                 InlineKeyboardButton(BUTTONS["help"], callback_data="list_help")
             ])
         return InlineKeyboardMarkup(buttons)
+
+    def _normalize_days(self, value, fallback: int) -> List[int]:
+        """Return a list of weekday integers from config values."""
+        if value is None:
+            return [fallback]
+        if isinstance(value, (list, tuple, set)):
+            days = []
+            for item in value:
+                try:
+                    days.append(int(item))
+                except (TypeError, ValueError):
+                    logger.warning("Ignoring invalid day value: %s", item)
+            return days or [fallback]
+        try:
+            return [int(value)]
+        except (TypeError, ValueError):
+            logger.warning("Invalid day value %s, using fallback %s", value, fallback)
+            return [fallback]
     
     def _get_all_active_users(self) -> List[Dict]:
         """Get all active users for sending reminders."""
@@ -1335,11 +1354,16 @@ class SocialChatBot:
         self.application.add_handler(CallbackQueryHandler(self.list_callback_handler, pattern="^list_"))
         
         # Schedule weekly reminder and matching
-        reminder_day = self.config.get('reminder_day', 0)  # Monday by default
+        reminder_days_config = self.config.get('reminder_days', self.config.get('reminder_day'))
+        reminder_days = self._normalize_days(reminder_days_config, 0)
         reminder_time_str = self.config.get('reminder_time', '09:00')
-        liking_day = self.config.get('liking_day', reminder_day)
+
+        liking_days_config = self.config.get('liking_days', self.config.get('liking_day', reminder_days[0]))
+        liking_days = self._normalize_days(liking_days_config, reminder_days[0])
         liking_time_str = self.config.get('liking_time', '11:00')
-        matching_day = self.config.get('matching_day', 0)  # Monday by default
+
+        matching_days_config = self.config.get('matching_days', self.config.get('matching_day', 0))
+        matching_days = self._normalize_days(matching_days_config, 0)
         matching_time_str = self.config.get('matching_time', '12:00')
         
         # Parse times
@@ -1348,23 +1372,29 @@ class SocialChatBot:
         matching_hour, matching_minute = map(int, matching_time_str.split(':'))
         
         # Add jobs to scheduler
-        self.scheduler.add_job(
-            self.send_weekly_reminder,
-            CronTrigger(day_of_week=reminder_day, hour=reminder_hour, minute=reminder_minute),
-            id='weekly_reminder'
-        )
+        for day in reminder_days:
+            job_id = f'weekly_reminder_{day}'
+            self.scheduler.add_job(
+                self.send_weekly_reminder,
+                CronTrigger(day_of_week=day, hour=reminder_hour, minute=reminder_minute),
+                id=job_id
+            )
 
-        self.scheduler.add_job(
-            self.send_liking_phase_list,
-            CronTrigger(day_of_week=liking_day, hour=liking_hour, minute=liking_minute),
-            id='send_liking_phase'
-        )
-        
-        self.scheduler.add_job(
-            self.send_participant_list,
-            CronTrigger(day_of_week=matching_day, hour=matching_hour, minute=matching_minute),
-            id='send_matches'
-        )
+        for day in liking_days:
+            job_id = f'send_liking_phase_{day}'
+            self.scheduler.add_job(
+                self.send_liking_phase_list,
+                CronTrigger(day_of_week=day, hour=liking_hour, minute=liking_minute),
+                id=job_id
+            )
+
+        for day in matching_days:
+            job_id = f'send_matches_{day}'
+            self.scheduler.add_job(
+                self.send_participant_list,
+                CronTrigger(day_of_week=day, hour=matching_hour, minute=matching_minute),
+                id=job_id
+            )
         
         # Start scheduler
         self.scheduler.start()
