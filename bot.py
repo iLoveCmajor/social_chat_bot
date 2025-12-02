@@ -1110,15 +1110,14 @@ class SocialChatBot:
         self._set_week_phase('optin')
         users = self._get_all_active_users()
         week = self._get_current_week()
-        week_label = self._get_current_week_label()
         bot = self._get_bot(context)
         
         logger.info(f"Sending weekly reminder to {len(users)} users for week {week}")
         
-        message = TEXT["weekly_reminder"]
-        
         sent_count = 0
         for user in users:
+            first_name = user.get('first_name') or "User"
+            message = TEXT["weekly_reminder"].format(first_name=first_name)
             try:
                 await bot.send_message(
                     chat_id=user['chat_id'],
