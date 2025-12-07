@@ -13,11 +13,13 @@ import sqlite3
 from pathlib import Path
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
+    Defaults,
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -1320,8 +1322,14 @@ class SocialChatBot:
     
     def run(self):
         """Run the bot."""
-        # Create application
-        self.application = Application.builder().token(self.bot_token).build()
+        # Create application with HTML parsing enabled for outgoing messages
+        defaults = Defaults(parse_mode=ParseMode.HTML)
+        self.application = (
+            Application.builder()
+            .token(self.bot_token)
+            .defaults(defaults)
+            .build()
+        )
         
         # Add command handlers
         self.application.add_handler(CommandHandler("start", self.start_command))
