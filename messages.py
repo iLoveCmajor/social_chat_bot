@@ -124,6 +124,6 @@ ALERTS = {
     "like_requires_optin": "Both users must be opted in before liking.",
     "dislike_failed": "Could not update dislike.",
     "matching_locked": "Matching is already in progress this week. Likes are closed.",
-    "liking_locked": "Preference changes are only available during the liking phase.",
+    "liking_locked": "Эта кнопка сейчас не актуальна.",
     "optin_phase_only": "А всё, а раньше надо было!\nРегистрация на завтра закрыта, увидимся в следующий раз!",
 }

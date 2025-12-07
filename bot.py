@@ -710,7 +710,7 @@ class SocialChatBot:
                     )
                 ]])
             buttons.append([
-                InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_optout")
+                InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_dislike_all")
             ])
 
         return InlineKeyboardMarkup(buttons)
@@ -739,7 +739,7 @@ class SocialChatBot:
                 ])
             else:
                 buttons.append([
-                    InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_optout")
+                    InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_dislike_all")
                 ])
         return InlineKeyboardMarkup(buttons)
 
@@ -1052,13 +1052,22 @@ class SocialChatBot:
 
         if action == "intro_yes":
             await query.answer()
-            first_name = query.from_user.first_name or "Friend"
-            if self._get_week_phase() == 'optin':
+            user = query.from_user
+            first_name = user.first_name or "Friend"
+            phase = self._get_week_phase()
+            responded, _ = self._get_participation_state(user_id)
+
+            if phase == 'optin':
                 await query.message.reply_text(TEXT["welcome_yes_response"])
                 weekly_message = TEXT["weekly_reminder"].format(first_name=first_name)
+                followup_markup = (
+                    self._build_optin_choice_keyboard()
+                    if not responded
+                    else self._build_main_menu_keyboard(user_id)
+                )
                 await query.message.reply_text(
                     weekly_message,
-                    reply_markup=self._build_main_menu_keyboard(user_id)
+                    reply_markup=followup_markup
                 )
             else:
                 await query.message.reply_text(
@@ -1093,17 +1102,21 @@ class SocialChatBot:
             self._set_user_participation(user_id, True)
             response = RESPONSES["optin_set"]
         elif action == "list_optout":
-            phase = self._get_week_phase()
-            if phase not in ('optin', 'liking'):
+            if self._get_week_phase() != 'optin':
                 await query.answer(ALERTS["optin_phase_only"], show_alert=True)
                 return
-            if phase == 'liking':
-                self._dislike_all_participants(user_id)
-                response = RESPONSES["dislike_all_set"]
-            else:
-                self._set_user_participation(user_id, False)
-                response = RESPONSES["optout_set"]
+            self._set_user_participation(user_id, False)
+            response = RESPONSES["optout_set"]
+        elif action == "list_dislike_all":
+            if self._get_week_phase() != 'liking':
+                await query.answer(ALERTS["liking_locked"], show_alert=True)
+                return
+            self._dislike_all_participants(user_id)
+            response = RESPONSES["dislike_all_set"]
         elif action == "list_change_mind":
+            if self._get_week_phase() != 'optin':
+                await query.answer(ALERTS["optin_phase_only"], show_alert=True)
+                return
             await query.answer()
             await query.message.reply_text(
                 TEXT["change_mind_prompt"],
@@ -1111,6 +1124,9 @@ class SocialChatBot:
             )
             return
         elif action == "list_no_participants_ack":
+            if self._get_week_phase() != 'liking':
+                await query.answer(ALERTS["liking_locked"], show_alert=True)
+                return
             await query.answer()
             await query.message.reply_text(TEXT["matching_no_participants_followup"])
             return
