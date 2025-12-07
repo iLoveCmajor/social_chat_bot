@@ -641,6 +641,13 @@ class SocialChatBot:
         lines.append(TEXT["matching_waiting_notice"])
         return "\n".join(lines)
 
+    def _build_optin_choice_keyboard(self) -> InlineKeyboardMarkup:
+        """Return inline keyboard with opt-in/out choices."""
+        return InlineKeyboardMarkup([[
+            InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin"),
+            InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
+        ]])
+
     def _build_intro_keyboard(self, include_no: bool = True) -> InlineKeyboardMarkup:
         """Return intro buttons for onboarding choices."""
         buttons: List[List[InlineKeyboardButton]] = [
@@ -657,22 +664,12 @@ class SocialChatBot:
         phase = self._get_week_phase()
 
         if phase == 'optin':
-            responded, opted_in = self._get_participation_state(user_id)
-            buttons = []
+            responded, _ = self._get_participation_state(user_id)
             if not responded:
-                buttons.append([
-                    InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin"),
-                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
-                ])
-            elif opted_in:
-                buttons.append([
-                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
-                ])
-            else:
-                buttons.append([
-                    InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin")
-                ])
-            return InlineKeyboardMarkup(buttons)
+                return self._build_optin_choice_keyboard()
+            return InlineKeyboardMarkup([[
+                InlineKeyboardButton(BUTTONS["change_mind"], callback_data="list_change_mind")
+            ]])
 
         if not self._is_user_opted_in(user_id):
             return InlineKeyboardMarkup([])
@@ -716,20 +713,12 @@ class SocialChatBot:
         buttons: List[List[InlineKeyboardButton]] = []
 
         if phase == 'optin':
-            responded, opted_in = self._get_participation_state(user_id)
+            responded, _ = self._get_participation_state(user_id)
             if not responded:
-                buttons.append([
-                    InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin"),
-                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
-                ])
-            elif opted_in:
-                buttons.append([
-                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
-                ])
-            else:
-                buttons.append([
-                    InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin")
-                ])
+                return self._build_optin_choice_keyboard()
+            buttons.append([
+                InlineKeyboardButton(BUTTONS["change_mind"], callback_data="list_change_mind")
+            ])
         elif phase == 'liking' and opted_in:
             buttons.append([
                 InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_optout")
@@ -1045,10 +1034,19 @@ class SocialChatBot:
 
         if action == "intro_yes":
             await query.answer()
-            await query.message.reply_text(
-                TEXT["welcome_yes_response"],
-                reply_markup=self._build_main_menu_keyboard(user_id)
-            )
+            first_name = query.from_user.first_name or "Friend"
+            if self._get_week_phase() == 'optin':
+                await query.message.reply_text(TEXT["welcome_yes_response"])
+                weekly_message = TEXT["weekly_reminder"].format(first_name=first_name)
+                await query.message.reply_text(
+                    weekly_message,
+                    reply_markup=self._build_main_menu_keyboard(user_id)
+                )
+            else:
+                await query.message.reply_text(
+                    TEXT["welcome_yes_response"],
+                    reply_markup=self._build_main_menu_keyboard(user_id)
+                )
             return
 
         if action == "intro_no":
@@ -1087,6 +1085,13 @@ class SocialChatBot:
             else:
                 self._set_user_participation(user_id, False)
                 response = RESPONSES["optout_set"]
+        elif action == "list_change_mind":
+            await query.answer()
+            await query.message.reply_text(
+                TEXT["change_mind_prompt"],
+                reply_markup=self._build_optin_choice_keyboard()
+            )
+            return
         elif action.startswith("list_like_"):
             if matching_locked:
                 await query.answer(ALERTS["matching_locked"], show_alert=True)

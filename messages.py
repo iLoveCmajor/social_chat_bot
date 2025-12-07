@@ -18,8 +18,9 @@ TEXT = {
         А дальше — договаривайтесь в личке, встречайтес, общайтес!
         """
     ),
-    "welcome_yes_response": "nice, see you on following meetings",
-    "welcome_no_response": "ok, see you next time",
+    "welcome_yes_response": "Отлично!\nСкоро мы пришлём тебе приглашение на встречи этой недели!",
+    "welcome_no_response": "Жаль, но ок(\nВозвращайся, если передумаешь!",
+    "change_mind_prompt": "Давай ещё раз)\nЗавтра — день социального микродозинга. Хочешь приесоединиться? Время решиться есть сегодня до 19:00",
     "help": (
         "🤖 Social Chat Bot Buttons:\n\n"
         "• Opt In / Opt Out — control your participation\n"
@@ -53,7 +54,7 @@ TEXT = {
     "matching_participants_header": "Итак, вот список ребят, которые готовы завтра сходить на встречу:",
     "matching_instructions": "Ты можешь оставить его как есть ИЛИ через кнопки ниже отметить тех, с кем завтра не хочешь увидеться (об этом никто не узнает, просто рандомайзер исключит их из твоих мэтчей)",
     "matching_waiting_notice": "Редактировать список можно сегодня <b>до 23:59</b>",
-    "matching_no_participants": "- No other participants yet. Invite friends to opt in!",
+    "matching_no_participants": "Ой, никого нет. Видимо в этот раз микродозинг отменяется.",
     "matching_liked": "➕",
     "matching_disliked": "➖",
     "matching_participant_line": "{idx}. {name} — {state}",
@@ -100,8 +101,9 @@ BUTTONS = {
     "optin": "✅ Да, погнали",
     "optout": "⏭ Не в этот раз",
     "optout_final": "🙅 Скрыть всех",
-    "intro_yes": "yes, let's go",
-    "intro_no": "no, not now",
+    "intro_yes": "Окей, я в деле",
+    "intro_no": "Не, я пас",
+    "change_mind": "Ой, я передумал!",
 }
 
 RESPONSES = {
@@ -120,5 +122,5 @@ ALERTS = {
     "dislike_failed": "Could not update dislike.",
     "matching_locked": "Matching is already in progress this week. Likes are closed.",
     "liking_locked": "Preference changes are only available during the liking phase.",
-    "optin_phase_only": "Opt-in controls are only available during the opt-in phase.",
+    "optin_phase_only": "А всё, а раньше надо было!\nРегистрация на завтра закрыта, увидимся в следующий раз!",
 }
