@@ -100,8 +100,6 @@ BUTTONS = {
     "optin": "✅ Да, погнали",
     "optout": "⏭ Не в этот раз",
     "optout_final": "🙅 Скрыть всех",
-    "status": "📊 Status",
-    "help": "❓ Help",
     "intro_yes": "yes, let's go",
     "intro_no": "no, not now",
 }

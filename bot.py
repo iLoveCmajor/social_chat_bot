@@ -734,11 +734,6 @@ class SocialChatBot:
             buttons.append([
                 InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_optout")
             ])
-        else:
-            buttons.append([
-                InlineKeyboardButton(BUTTONS["status"], callback_data="list_status"),
-                InlineKeyboardButton(BUTTONS["help"], callback_data="list_help")
-            ])
         return InlineKeyboardMarkup(buttons)
 
     def _normalize_days(self, value, fallback: int) -> List[int]:
