@@ -641,6 +641,17 @@ class SocialChatBot:
         lines.append(TEXT["matching_waiting_notice"])
         return "\n".join(lines)
 
+    def _build_intro_keyboard(self, include_no: bool = True) -> InlineKeyboardMarkup:
+        """Return intro buttons for onboarding choices."""
+        buttons: List[List[InlineKeyboardButton]] = [
+            [InlineKeyboardButton(BUTTONS["intro_yes"], callback_data="intro_yes")]
+        ]
+        if include_no:
+            buttons[0].append(
+                InlineKeyboardButton(BUTTONS["intro_no"], callback_data="intro_no")
+            )
+        return InlineKeyboardMarkup(buttons)
+
     def _build_matching_keyboard(self, user_id: int) -> InlineKeyboardMarkup:
         """Return inline buttons for liking/unliking and status controls."""
         phase = self._get_week_phase()
@@ -942,7 +953,7 @@ class SocialChatBot:
         
         await update.message.reply_text(
             welcome_message,
-            reply_markup=self._build_main_menu_keyboard(user.id)
+            reply_markup=self._build_intro_keyboard()
         )
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1030,6 +1041,30 @@ class SocialChatBot:
         reply_markup = self._build_matching_keyboard(user_id)
 
         await update.message.reply_text(message, reply_markup=reply_markup)
+    
+    async def intro_callback_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle onboarding buttons shown after /start."""
+        query = update.callback_query
+        action = query.data
+        user_id = query.from_user.id
+
+        if action == "intro_yes":
+            await query.answer()
+            await query.message.reply_text(
+                TEXT["welcome_yes_response"],
+                reply_markup=self._build_main_menu_keyboard(user_id)
+            )
+            return
+
+        if action == "intro_no":
+            await query.answer()
+            await query.message.reply_text(
+                TEXT["welcome_no_response"],
+                reply_markup=self._build_intro_keyboard(include_no=False)
+            )
+            return
+
+        await query.answer()
 
     async def list_callback_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle inline button interactions for the participant list."""
@@ -1342,6 +1377,7 @@ class SocialChatBot:
         self.application.add_handler(CommandHandler("admin_list", self.admin_list_command))
         self.application.add_handler(CommandHandler("admin_status", self.admin_status_command))
         self.application.add_handler(CommandHandler("admin_reset", self.admin_reset_week_command))
+        self.application.add_handler(CallbackQueryHandler(self.intro_callback_handler, pattern="^intro_"))
         self.application.add_handler(CallbackQueryHandler(self.list_callback_handler, pattern="^list_"))
         
         # Schedule weekly reminder and matching
