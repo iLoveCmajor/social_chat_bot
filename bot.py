@@ -614,27 +614,29 @@ class SocialChatBot:
             return "\n".join(lines)
 
         # Liking phase for opted-in users
-        lines.append(TEXT["matching_participants_header"])
-        lines.append("")
         likes = self._get_user_likes(user_id)
         dislikes = self._get_user_dislikes(user_id)
         others = [p for p in participants if p['user_id'] != user_id]
         if not others:
-            lines.append(TEXT["matching_no_participants"])
-        else:
-            for idx, participant in enumerate(others, 1):
-                participant_id = participant['user_id']
-                if participant_id in dislikes:
-                    state = TEXT["matching_disliked"]
-                elif participant_id in likes:
-                    state = TEXT["matching_liked"]
-                lines.append(
-                    TEXT["matching_participant_line"].format(
-                        idx=idx,
-                        name=self._get_display_name(participant),
-                        state=state
-                    )
+            return TEXT["matching_no_participants"]
+
+        lines.append(TEXT["matching_participants_header"])
+        lines.append("")
+        for idx, participant in enumerate(others, 1):
+            participant_id = participant['user_id']
+            if participant_id in dislikes:
+                state = TEXT["matching_disliked"]
+            elif participant_id in likes:
+                state = TEXT["matching_liked"]
+            else:
+                state = ""
+            lines.append(
+                TEXT["matching_participant_line"].format(
+                    idx=idx,
+                    name=self._get_display_name(participant),
+                    state=state
                 )
+            )
         lines.append("")
         lines.append(TEXT["matching_instructions"])
         lines.append("")
@@ -700,6 +702,13 @@ class SocialChatBot:
                 ])
 
         if phase == 'liking':
+            if not participants:
+                return InlineKeyboardMarkup([[
+                    InlineKeyboardButton(
+                        BUTTONS["no_participants_ack"],
+                        callback_data="list_no_participants_ack"
+                    )
+                ]])
             buttons.append([
                 InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_optout")
             ])
@@ -720,9 +729,18 @@ class SocialChatBot:
                 InlineKeyboardButton(BUTTONS["change_mind"], callback_data="list_change_mind")
             ])
         elif phase == 'liking' and opted_in:
-            buttons.append([
-                InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_optout")
-            ])
+            other_participants = [p for p in self._get_participants() if p['user_id'] != user_id]
+            if not other_participants:
+                buttons.append([
+                    InlineKeyboardButton(
+                        BUTTONS["no_participants_ack"],
+                        callback_data="list_no_participants_ack"
+                    )
+                ])
+            else:
+                buttons.append([
+                    InlineKeyboardButton(BUTTONS["optout_final"], callback_data="list_optout")
+                ])
         return InlineKeyboardMarkup(buttons)
 
     def _normalize_days(self, value, fallback: int) -> List[int]:
@@ -1092,6 +1110,10 @@ class SocialChatBot:
                 reply_markup=self._build_optin_choice_keyboard()
             )
             return
+        elif action == "list_no_participants_ack":
+            await query.answer()
+            await query.message.reply_text(TEXT["matching_no_participants_followup"])
+            return
         elif action.startswith("list_like_"):
             if matching_locked:
                 await query.answer(ALERTS["matching_locked"], show_alert=True)
@@ -1198,6 +1220,10 @@ class SocialChatBot:
 
     async def send_participant_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send final matches (matching phase) to all participants."""
+        participants = self._get_participants()
+        if len(participants) <= 1:
+            logger.info("Not enough participants to start matching phase; staying in liking phase.")
+            return 0
         self._start_matching_phase()
         return await self._broadcast_phase_dashboards(context)
 
@@ -1220,6 +1246,11 @@ class SocialChatBot:
 
         if phase == 'matching':
             await update.message.reply_text(TEXT["admin_next_phase_blocked"])
+            return
+
+        if phase == 'liking' and len(participants) <= 1:
+            self._set_week_phase('optin')
+            await update.message.reply_text(TEXT["admin_next_phase_insufficient"])
             return
 
         if phase == 'optin':

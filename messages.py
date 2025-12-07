@@ -54,9 +54,10 @@ TEXT = {
     "matching_participants_header": "Итак, вот список ребят, которые готовы завтра сходить на встречу:",
     "matching_instructions": "Ты можешь оставить его как есть ИЛИ через кнопки ниже отметить тех, с кем завтра не хочешь увидеться (об этом никто не узнает, просто рандомайзер исключит их из твоих мэтчей)",
     "matching_waiting_notice": "Редактировать список можно сегодня <b>до 23:59</b>",
-    "matching_no_participants": "Ой, никого нет. Видимо в этот раз микродозинг отменяется.",
-    "matching_liked": "➕",
-    "matching_disliked": "➖",
+    "matching_no_participants": "Ой, никого нет...\nСегодня никто не захотел микродозиться.",
+    "matching_no_participants_followup": "Такое бывает!\nДавай попробуем ещё раз через пару дней — бот пришлёт тебе новое приглашение!",
+    "matching_liked": "✅",
+    "matching_disliked": "❌",
     "matching_participant_line": "{idx}. {name} — {state}",
     "matching_no_matches": "Доброе утро!\nВеликий Рандом перемешал пары, но тебе, к сожалению, не хватило партнера( Возможно на сегодня отметилось слишком мало людей.\nМожет быть это повод проявить активность и самому написать кому-то? Или хороший день, чтобы провести время с собой?\nМы скоро вернёмся с приглашением на следующие встречи, stay tuned!",
     "matching_pair_announcement": "Доброе утро!Сегодня социальный день, и в этот раз твой мэтч — {name}. Самое время написать друг другу и договориться о встрече — позавтракать вместе, выйти на прогулку, поковоркать, it's up to you.Хорошего дня)",
@@ -72,6 +73,7 @@ TEXT = {
     "admin_next_phase_liking_sent": "🎬 Liking phase started and sent dashboards to {count} participants.",
     "admin_next_phase_matching_sent": "🚀 Matching phase started and sent dashboards to {count} participants.",
     "admin_next_phase_none": "ℹ️ No opted-in participants to move forward yet.",
+    "admin_next_phase_insufficient": "ℹ️ Not enough participants to start matching. Opt-in has been reopened for a new cycle.",
     "admin_next_phase_blocked": "⚠️ Matching is already active. Use /admin_reset to restart the cycle.",
     "admin_reset": "🔄 Restarted {week_label}: cleared {count} participation record(s) and sent reminders to {notified} active user(s).",
     "admin_status": (
@@ -96,14 +98,15 @@ TEXT = {
 }
 
 BUTTONS = {
-    "unlike": "❌ Скрыть {name}",
-    "like": "🔄 Вернуть {name}",
+    "unlike": "Скрыть {name}",
+    "like": "Вернуть {name}",
     "optin": "✅ Да, погнали",
     "optout": "⏭ Не в этот раз",
     "optout_final": "🙅 Скрыть всех",
     "intro_yes": "Окей, я в деле",
     "intro_no": "Не, я пас",
     "change_mind": "Ой, я передумал!",
+    "no_participants_ack": "Ну блин",
 }
 
 RESPONSES = {
