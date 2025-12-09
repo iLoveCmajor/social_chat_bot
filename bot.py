@@ -1144,7 +1144,13 @@ class SocialChatBot:
                 await query.answer(ALERTS["liking_locked"], show_alert=True)
                 return
             await query.answer()
-            await query.message.reply_text(TEXT["matching_no_participants_followup"])
+            try:
+                await query.edit_message_text(
+                    TEXT["matching_no_participants_followup"],
+                    reply_markup=InlineKeyboardMarkup([])
+                )
+            except Exception as exc:
+                logger.warning("Failed to edit message for no participants ack: %s", exc)
             return
         elif action.startswith("list_like_"):
             if matching_locked:
@@ -1196,7 +1202,7 @@ class SocialChatBot:
         except Exception as exc:
             logger.warning("Failed to edit message for list callback: %s", exc)
 
-        await query.answer(response or RESPONSES["done"])
+        # await query.answer(response or RESPONSES["done"])
     
     async def send_weekly_reminder(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send weekly reminder to all active users."""
