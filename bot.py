@@ -1104,6 +1104,9 @@ class SocialChatBot:
         query = update.callback_query
         action = query.data
         user_id = query.from_user.id
+        user = query.from_user
+        chat_id = query.message.chat_id if query.message else user_id
+        self._add_user(user_id, user.username, user.first_name, chat_id)
         matching_locked = self._is_matching_phase_active()
         liking_active = self._get_week_phase() == 'liking'
 
