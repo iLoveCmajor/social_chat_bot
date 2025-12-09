@@ -1118,10 +1118,13 @@ class SocialChatBot:
                 await query.answer(ALERTS["optin_phase_only"], show_alert=True)
                 return
             await query.answer()
-            await query.message.reply_text(
-                TEXT["change_mind_prompt"],
-                reply_markup=self._build_optin_choice_keyboard()
-            )
+            try:
+                await query.edit_message_text(
+                    TEXT["change_mind_prompt"],
+                    reply_markup=self._build_optin_choice_keyboard()
+                )
+            except Exception as exc:
+                logger.warning("Failed to edit message for change mind: %s", exc)
             return
         elif action == "list_no_participants_ack":
             if self._get_week_phase() != 'liking':
