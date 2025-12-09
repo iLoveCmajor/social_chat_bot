@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Set, List, Optional, Tuple
 import sqlite3
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
@@ -64,7 +65,15 @@ class SocialChatBot:
         self.bot_token = bot_token
         self.config = config
         self.db_path = Path(__file__).parent / "bot_data.db"
-        self.scheduler = AsyncIOScheduler()
+        tz_name = config.get('timezone') or os.getenv('BOT_TIMEZONE') or "Asia/Tbilisi"
+        try:
+            self.timezone = ZoneInfo(tz_name)
+            self.timezone_name = tz_name
+        except Exception:
+            logger.warning("Invalid timezone %s, falling back to Asia/Tbilisi", tz_name)
+            self.timezone = ZoneInfo("Asia/Tbilisi")
+            self.timezone_name = "Asia/Tbilisi"
+        self.scheduler = AsyncIOScheduler(timezone=self.timezone)
         self.application = None
         self.admin_ids: Set[int] = set(config.get('admin_ids', []))
         self._init_database()
@@ -141,14 +150,18 @@ class SocialChatBot:
         conn.close()
         logger.info("Database initialized successfully")
     
+    def _now(self) -> datetime:
+        """Return current datetime in configured timezone."""
+        return datetime.now(self.timezone)
+
     def _get_current_week(self) -> str:
         """Get current week identifier (year-week)."""
-        now = datetime.now()
+        now = self._now()
         return f"{now.year}-W{now.isocalendar()[1]:02d}"
 
     def _get_current_week_range(self):
         """Return date objects representing the Monday-Sunday range for this week."""
-        today = datetime.now().date()
+        today = self._now().date()
         start = today - timedelta(days=today.weekday())
         end = start + timedelta(days=6)
         return start, end
@@ -1453,7 +1466,12 @@ class SocialChatBot:
             job_id = f'weekly_reminder_{day}'
             self.scheduler.add_job(
                 self.send_weekly_reminder,
-                CronTrigger(day_of_week=day, hour=reminder_hour, minute=reminder_minute),
+                CronTrigger(
+                    day_of_week=day,
+                    hour=reminder_hour,
+                    minute=reminder_minute,
+                    timezone=self.timezone
+                ),
                 id=job_id
             )
 
@@ -1461,7 +1479,12 @@ class SocialChatBot:
             job_id = f'send_liking_phase_{day}'
             self.scheduler.add_job(
                 self.send_liking_phase_list,
-                CronTrigger(day_of_week=day, hour=liking_hour, minute=liking_minute),
+                CronTrigger(
+                    day_of_week=day,
+                    hour=liking_hour,
+                    minute=liking_minute,
+                    timezone=self.timezone
+                ),
                 id=job_id
             )
 
@@ -1469,7 +1492,12 @@ class SocialChatBot:
             job_id = f'send_matches_{day}'
             self.scheduler.add_job(
                 self.send_participant_list,
-                CronTrigger(day_of_week=day, hour=matching_hour, minute=matching_minute),
+                CronTrigger(
+                    day_of_week=day,
+                    hour=matching_hour,
+                    minute=matching_minute,
+                    timezone=self.timezone
+                ),
                 id=job_id
             )
         

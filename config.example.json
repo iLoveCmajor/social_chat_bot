@@ -8,6 +8,7 @@
   "liking_time": "11:00",
   "matching_days": [0, 2],
   "matching_time": "12:00",
+  "timezone": "Asia/Tbilisi",
   "admin_ids": [
     123456789
   ]
