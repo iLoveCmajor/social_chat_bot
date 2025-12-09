@@ -737,10 +737,14 @@ class SocialChatBot:
         if phase == 'optin':
             responded, _ = self._get_participation_state(user_id)
             if not responded:
-                return self._build_optin_choice_keyboard()
-            buttons.append([
-                InlineKeyboardButton(BUTTONS["change_mind"], callback_data="list_change_mind")
-            ])
+                buttons.append([
+                    InlineKeyboardButton(BUTTONS["optin"], callback_data="list_optin"),
+                    InlineKeyboardButton(BUTTONS["optout"], callback_data="list_optout")
+                ])
+            else:
+                buttons.append([
+                    InlineKeyboardButton(BUTTONS["change_mind"], callback_data="list_change_mind")
+                ])
         elif phase == 'liking' and opted_in:
             other_participants = [p for p in self._get_participants() if p['user_id'] != user_id]
             if not other_participants:
@@ -1068,19 +1072,12 @@ class SocialChatBot:
             user = query.from_user
             first_name = user.first_name or "Friend"
             phase = self._get_week_phase()
-            responded, _ = self._get_participation_state(user_id)
-
             if phase == 'optin':
                 await query.message.reply_text(TEXT["welcome_yes_response"])
                 weekly_message = TEXT["weekly_reminder"].format(first_name=first_name)
-                followup_markup = (
-                    self._build_optin_choice_keyboard()
-                    if not responded
-                    else self._build_main_menu_keyboard(user_id)
-                )
                 await query.message.reply_text(
                     weekly_message,
-                    reply_markup=followup_markup
+                    reply_markup=self._build_optin_choice_keyboard()
                 )
             else:
                 await query.message.reply_text(
