@@ -7,7 +7,7 @@ Helps people find partners to hang out by matching weekly participants.
 import os
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Set, List, Optional, Tuple
 import sqlite3
 from pathlib import Path
@@ -277,6 +277,38 @@ class SocialChatBot:
         if not row:
             return False, False
         return True, bool(row[0])
+    
+    def _get_phase_info(self) -> Tuple[str, Optional[str]]:
+        """Return current phase and its start timestamp string."""
+        week = self._get_current_week()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT phase, phase_started_at FROM weekly_state
+            WHERE week_year = ?
+            ''',
+            (week,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return 'optin', None
+        phase = row[0] or 'optin'
+        return phase, row[1]
+
+    def _format_phase_timestamp(self, started_at: Optional[str]) -> str:
+        """Return human-readable timestamp for phase start."""
+        if not started_at:
+            return TEXT["admin_phase_unknown_start"]
+        try:
+            dt = datetime.fromisoformat(started_at)
+        except ValueError:
+            return started_at
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        local_dt = dt.astimezone(self.timezone)
+        return local_dt.strftime("%Y-%m-%d %H:%M %Z")
 
     def _get_user_likes(self, user_id: int) -> Set[int]:
         """Return a set of user IDs liked by the user this week."""
@@ -1342,20 +1374,47 @@ class SocialChatBot:
         if not await self._ensure_admin(update):
             return
 
+        phase, phase_started_at = self._get_phase_info()
+        phase_label = TEXT.get(f"phase_name_{phase}", phase.title())
+        started_at_display = self._format_phase_timestamp(phase_started_at)
         participants = self._get_participants()
         participant_lookup = {p['user_id']: p for p in participants}
         week_label = self._get_current_week_label()
 
-        if not participants:
-            await update.message.reply_text(
-                TEXT["admin_list_no_participants"].format(week_label=week_label)
-            )
+        lines = [
+            TEXT["admin_phase_overview"].format(
+                phase_name=phase_label,
+                started_at=started_at_display
+            ),
+            ""
+        ]
+
+        if phase == 'optin':
+            if not participants:
+                lines.append(TEXT["admin_list_no_participants"].format(week_label=week_label))
+            else:
+                lines.append(TEXT["admin_list_optin_header"].format(week_label=week_label))
+                sorted_participants = sorted(
+                    participants,
+                    key=lambda p: self._get_display_name(p).lower()
+                )
+                for participant in sorted_participants:
+                    lines.append(
+                        TEXT["admin_list_optin_entry"].format(
+                            name=self._get_display_name(participant)
+                        )
+                    )
+            await update.message.reply_text("\n".join(lines))
             return
 
-        likes_map, dislikes_map = self._get_week_relationships()
+        if phase == 'liking':
+            if not participants:
+                lines.append(TEXT["admin_list_no_participants"].format(week_label=week_label))
+                await update.message.reply_text("\n".join(lines))
+                return
 
-        if not self._is_matching_phase_active():
-            lines = [TEXT["admin_list_optin_header"].format(week_label=week_label)]
+            likes_map, dislikes_map = self._get_week_relationships()
+            lines.append(TEXT["admin_list_optin_header"].format(week_label=week_label))
             sorted_participants = sorted(
                 participants,
                 key=lambda p: self._get_display_name(p).lower()
@@ -1381,6 +1440,12 @@ class SocialChatBot:
                         dislikes=dislikes_text
                     )
                 )
+            await update.message.reply_text("\n".join(lines))
+            return
+
+        # phase == matching
+        if not participants:
+            lines.append(TEXT["admin_list_no_participants"].format(week_label=week_label))
             await update.message.reply_text("\n".join(lines))
             return
 
@@ -1422,8 +1487,8 @@ class SocialChatBot:
                 lines.append(TEXT["admin_list_unmatched_line"].format(
                     name=self._get_display_name(participant_lookup[user_id])
                 ))
-        else:
-            lines.append(TEXT["admin_list_unmatched_none"])
+            else:
+                lines.append(TEXT["admin_list_unmatched_none"])
 
         await update.message.reply_text("\n".join(lines))
 

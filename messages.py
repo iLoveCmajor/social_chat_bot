@@ -92,6 +92,12 @@ TEXT = {
     "admin_list_unmatched_header": "🙋 Unmatched participants:",
     "admin_list_unmatched_line": "• {name}",
     "admin_list_unmatched_none": "Everyone received a match this week!",
+    "admin_phase_overview": "📅 Phase: {phase_name}\nStarted at: {started_at}",
+    "admin_phase_unknown_start": "unknown",
+    "phase_name_optin": "Opt-in",
+    "phase_name_liking": "Liking",
+    "phase_name_matching": "Matching",
+    "admin_list_optin_entry": "• {name}",
     "liking_phase_optin_closed": "Opt-ins are closed while the liking phase is in progress. Please come back next week!",
     "liking_phase_already_in": "Liking phase is underway and you're already participating. Use the buttons to manage dislikes or tap Dislike Everyone to avoid matches.",
 }
