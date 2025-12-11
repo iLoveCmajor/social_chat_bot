@@ -761,22 +761,53 @@ class SocialChatBot:
         return InlineKeyboardMarkup(buttons)
 
     def _normalize_days(self, value, fallback: int) -> List[int]:
-        """Return a list of weekday integers from config values."""
+        """Return a list of weekday integers from config values (0=Monday)."""
+        def _coerce(day_value):
+            try:
+                day_int = int(day_value)
+            except (TypeError, ValueError):
+                logger.warning("Ignoring invalid day value: %s", day_value)
+                return None
+            if not 0 <= day_int <= 6:
+                logger.warning("Day value %s out of range 0-6; ignoring", day_value)
+                return None
+            return day_int
+        
+        days: List[int] = []
         if value is None:
-            return [fallback]
+            coerced = _coerce(fallback)
+            return [coerced] if coerced is not None else [0]
+        
         if isinstance(value, (list, tuple, set)):
-            days = []
             for item in value:
-                try:
-                    days.append(int(item))
-                except (TypeError, ValueError):
-                    logger.warning("Ignoring invalid day value: %s", item)
+                coerced = _coerce(item)
+                if coerced is not None:
+                    days.append(coerced)
             return days or [fallback]
-        try:
-            return [int(value)]
-        except (TypeError, ValueError):
-            logger.warning("Invalid day value %s, using fallback %s", value, fallback)
-            return [fallback]
+        
+        coerced = _coerce(value)
+        if coerced is None:
+            fallback_coerced = _coerce(fallback)
+            return [fallback_coerced] if fallback_coerced is not None else [0]
+        return [coerced]
+    
+    def _parse_time_config(self, time_str: Optional[str], default: str, label: str) -> Tuple[int, int]:
+        """Parse HH:MM strings from config with validation."""
+        candidates = [time_str, default]
+        for candidate in candidates:
+            if not candidate:
+                continue
+            try:
+                hour_str, minute_str = candidate.split(':', 1)
+                hour = int(hour_str)
+                minute = int(minute_str)
+            except (ValueError, AttributeError):
+                logger.warning("Invalid %s format '%s'. Expected HH:MM.", label, candidate)
+                continue
+            if 0 <= hour < 24 and 0 <= minute < 60:
+                return hour, minute
+            logger.warning("Invalid %s time '%s'. Hour must be 0-23 and minute 0-59.", label, candidate)
+        raise ValueError(f"Could not parse a valid {label}; please update config.")
     
     def _get_all_active_users(self) -> List[Dict]:
         """Get all active users for sending reminders."""
@@ -1452,28 +1483,29 @@ class SocialChatBot:
         # Schedule weekly reminder and matching
         reminder_days_config = self.config.get('reminder_days', self.config.get('reminder_day'))
         reminder_days = self._normalize_days(reminder_days_config, 0)
-        reminder_time_str = self.config.get('reminder_time', '09:00')
+        reminder_time_str = self.config.get('reminder_time')
 
         liking_days_config = self.config.get('liking_days', self.config.get('liking_day', reminder_days[0]))
         liking_days = self._normalize_days(liking_days_config, reminder_days[0])
-        liking_time_str = self.config.get('liking_time', '11:00')
+        liking_time_str = self.config.get('liking_time')
 
         matching_days_config = self.config.get('matching_days', self.config.get('matching_day', 0))
         matching_days = self._normalize_days(matching_days_config, 0)
-        matching_time_str = self.config.get('matching_time', '12:00')
+        matching_time_str = self.config.get('matching_time')
         
         # Parse times
-        reminder_hour, reminder_minute = map(int, reminder_time_str.split(':'))
-        liking_hour, liking_minute = map(int, liking_time_str.split(':'))
-        matching_hour, matching_minute = map(int, matching_time_str.split(':'))
+        reminder_hour, reminder_minute = self._parse_time_config(reminder_time_str, '09:00', 'reminder_time')
+        liking_hour, liking_minute = self._parse_time_config(liking_time_str, '11:00', 'liking_time')
+        matching_hour, matching_minute = self._parse_time_config(matching_time_str, '12:00', 'matching_time')
         
         # Add jobs to scheduler
         for day in reminder_days:
+            day_str = str(day)
             job_id = f'weekly_reminder_{day}'
             self.scheduler.add_job(
                 self.send_weekly_reminder,
                 CronTrigger(
-                    day_of_week=day,
+                    day_of_week=day_str,
                     hour=reminder_hour,
                     minute=reminder_minute,
                     timezone=self.timezone
@@ -1482,11 +1514,12 @@ class SocialChatBot:
             )
 
         for day in liking_days:
+            day_str = str(day)
             job_id = f'send_liking_phase_{day}'
             self.scheduler.add_job(
                 self.send_liking_phase_list,
                 CronTrigger(
-                    day_of_week=day,
+                    day_of_week=day_str,
                     hour=liking_hour,
                     minute=liking_minute,
                     timezone=self.timezone
@@ -1495,11 +1528,12 @@ class SocialChatBot:
             )
 
         for day in matching_days:
+            day_str = str(day)
             job_id = f'send_matches_{day}'
             self.scheduler.add_job(
                 self.send_participant_list,
                 CronTrigger(
-                    day_of_week=day,
+                    day_of_week=day_str,
                     hour=matching_hour,
                     minute=matching_minute,
                     timezone=self.timezone
