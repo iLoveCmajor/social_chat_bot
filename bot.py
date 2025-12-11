@@ -649,7 +649,7 @@ class SocialChatBot:
             return "\n".join(lines)
 
         if phase == 'liking' and not user_opted_in:
-            return TEXT["liking_phase_optin_closed"]
+            return ALERTS["optin_phase_only"]
 
         if phase == 'optin':
             if not user_opted_in:
@@ -1053,23 +1053,8 @@ class SocialChatBot:
         chat_id = update.effective_chat.id
         phase = self._get_week_phase()
 
-        if phase == 'matching':
-            if self._is_user_opted_in(user.id):
-                await update.message.reply_text(TEXT["matching_phase_change_locked_optedin"])
-                matching_message = self._build_matching_phase_message(user.id)
-                reply_markup = self._build_matching_keyboard(user.id)
-                await update.message.reply_text(matching_message, reply_markup=reply_markup)
-            else:
-                await update.message.reply_text(TEXT["matching_phase_change_locked_notoptedin"])
-            return
-        if phase == 'liking':
-            if self._is_user_opted_in(user.id):
-                await update.message.reply_text(TEXT["liking_phase_already_in"])
-                matching_message = self._build_matching_phase_message(user.id)
-                reply_markup = self._build_matching_keyboard(user.id)
-                await update.message.reply_text(matching_message, reply_markup=reply_markup)
-            else:
-                await update.message.reply_text(TEXT["liking_phase_optin_closed"])
+        if phase != 'optin':
+            await update.message.reply_text(ALERTS["optin_phase_only"])
             return
         
         # Ensure user is in database
