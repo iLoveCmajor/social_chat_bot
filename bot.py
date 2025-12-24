@@ -1074,21 +1074,18 @@ class SocialChatBot:
     async def optout_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /optout command."""
         user = update.effective_user
-        if self._is_matching_phase_active():
-            if self._is_user_opted_in(user.id):
-                await update.message.reply_text(TEXT["matching_phase_change_locked_optedin"])
-                matching_message = self._build_matching_phase_message(user.id)
-                reply_markup = self._build_matching_keyboard(user.id)
-                await update.message.reply_text(matching_message, reply_markup=reply_markup)
-            else:
-                await update.message.reply_text(TEXT["matching_phase_change_locked_notoptedin"])
+        phase = self._get_week_phase()
+
+        # Only allow opt-out during optin phase
+        if phase != 'optin':
+            await update.message.reply_text(ALERTS["liking_locked"])
             return
-        
+
         # Set participation to false
         self._set_user_participation(user.id, False)
-        
+
         message = TEXT["optout_confirmation"]
-        
+
         await update.message.reply_text(message)
     
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1164,7 +1161,7 @@ class SocialChatBot:
             response = RESPONSES["optin_set"]
         elif action == "list_optout":
             if self._get_week_phase() != 'optin':
-                await query.answer(ALERTS["optin_phase_only"], show_alert=True)
+                await query.answer(ALERTS["liking_locked"], show_alert=True)
                 return
             self._set_user_participation(user_id, False)
             response = RESPONSES["optout_set"]
@@ -1254,13 +1251,29 @@ class SocialChatBot:
     
     async def send_weekly_reminder(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send weekly reminder to all active users."""
-        self._set_week_phase('optin')
+        current_phase = self._get_week_phase()
+
+        # Start new cycle: only transition to optin if we're in matching phase or if no phase is set
+        # This prevents Wednesday's reminder from resetting an in-progress Monday cycle
+        if current_phase == 'matching':
+            # Reset participation for new cycle
+            self._reset_current_week_participation()
+            self._set_week_phase('optin')
+            logger.info("Starting new cycle: reset participation and set phase to optin")
+        elif current_phase == 'optin':
+            # Already in optin phase, just continue
+            logger.info("Already in optin phase, continuing current cycle")
+        else:
+            # We're in liking phase - don't reset, this reminder came at the wrong time
+            logger.warning(f"Reminder fired during {current_phase} phase - skipping phase change to avoid disrupting current cycle")
+            return 0
+
         users = self._get_all_active_users()
         week = self._get_current_week()
         bot = self._get_bot(context)
-        
+
         logger.info(f"Sending weekly reminder to {len(users)} users for week {week}")
-        
+
         sent_count = 0
         for user in users:
             first_name = user.get('first_name') or "User"
@@ -1274,7 +1287,7 @@ class SocialChatBot:
                 sent_count += 1
             except Exception as e:
                 logger.error(f"Failed to send reminder to user {user['user_id']}: {e}")
-        
+
         return sent_count
     
     async def _broadcast_phase_dashboards(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
@@ -1306,6 +1319,13 @@ class SocialChatBot:
 
     async def send_participant_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send final matches (matching phase) to all participants."""
+        current_phase = self._get_week_phase()
+
+        # Only transition to matching if we're in liking phase
+        if current_phase != 'liking':
+            logger.warning(f"Matching job fired during {current_phase} phase - skipping to avoid disrupting cycle")
+            return 0
+
         participants = self._get_participants()
         if len(participants) <= 1:
             logger.info("Not enough participants to start matching phase; staying in liking phase.")
@@ -1315,6 +1335,13 @@ class SocialChatBot:
 
     async def send_liking_phase_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send liking phase dashboards to opted-in users."""
+        current_phase = self._get_week_phase()
+
+        # Only transition to liking if we're in optin phase
+        if current_phase != 'optin':
+            logger.warning(f"Liking phase job fired during {current_phase} phase - skipping to avoid disrupting cycle")
+            return 0
+
         self._set_week_phase('liking')
         return await self._broadcast_phase_dashboards(context)
 
@@ -1560,7 +1587,8 @@ class SocialChatBot:
                     minute=reminder_minute,
                     timezone=self.timezone
                 ),
-                id=job_id
+                id=job_id,
+                misfire_grace_time=None
             )
 
         for day in liking_days:
@@ -1574,7 +1602,8 @@ class SocialChatBot:
                     minute=liking_minute,
                     timezone=self.timezone
                 ),
-                id=job_id
+                id=job_id,
+                misfire_grace_time=None
             )
 
         for day in matching_days:
@@ -1588,7 +1617,8 @@ class SocialChatBot:
                     minute=matching_minute,
                     timezone=self.timezone
                 ),
-                id=job_id
+                id=job_id,
+                misfire_grace_time=None
             )
         
         # Start scheduler
