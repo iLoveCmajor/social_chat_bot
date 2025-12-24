@@ -100,6 +100,95 @@ class SocialChatBotTestCase(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertNotEqual(self.bot._get_week_phase(), "matching")
 
+    def test_initialize_likes_only_in_optin_phase(self):
+        """Test that auto-likes are only initialized during optin phase."""
+        self.bot._add_user(1, "alice", "Alice", 100)
+        self.bot._add_user(2, "bob", "Bob", 200)
+
+        # Set phase to liking
+        self.bot._set_week_phase("liking")
+        self.bot._set_user_participation(1, True)
+
+        # Now opt in user 2 during liking phase
+        self.bot._set_user_participation(2, True)
+
+        # User 2 should NOT have auto-likes because we're in liking phase
+        likes_user2 = self.bot._get_user_likes(2)
+        self.assertEqual(len(likes_user2), 0)
+
+        # Reset and test during optin phase
+        self.bot._reset_current_week_participation()
+        self.bot._set_week_phase("optin")
+        self.bot._set_user_participation(1, True)
+        self.bot._set_user_participation(2, True)
+
+        # Now both should have auto-likes
+        likes_user1 = self.bot._get_user_likes(1)
+        likes_user2 = self.bot._get_user_likes(2)
+        self.assertEqual(likes_user1, {2})
+        self.assertEqual(likes_user2, {1})
+
+    def test_phase_check_in_initialize_likes(self):
+        """Test that _initialize_likes_for_user only works in optin phase."""
+        self.bot._add_user(1, "alice", "Alice", 100)
+        self.bot._add_user(2, "bob", "Bob", 200)
+
+        # Test during matching phase - should not create likes
+        self.bot._set_week_phase("matching")
+        self.bot._set_user_participation(1, True)
+        self.bot._initialize_likes_for_user(2)
+        likes_user2 = self.bot._get_user_likes(2)
+        self.assertEqual(len(likes_user2), 0)
+
+        # Test during liking phase - should not create likes
+        self.bot._reset_current_week_participation()
+        self.bot._set_week_phase("liking")
+        self.bot._set_user_participation(1, True)
+        self.bot._initialize_likes_for_user(2)
+        likes_user2 = self.bot._get_user_likes(2)
+        self.assertEqual(len(likes_user2), 0)
+
+        # Test during optin phase - should create likes
+        self.bot._reset_current_week_participation()
+        self.bot._set_week_phase("optin")
+        self.bot._set_user_participation(1, True)
+        self.bot._initialize_likes_for_user(2)
+        likes_user2 = self.bot._get_user_likes(2)
+        self.assertEqual(likes_user2, {1})
+
+    def test_reset_participation_clears_all_data(self):
+        """Test that resetting participation clears opts, likes, and dislikes."""
+        self.bot._add_user(1, "user1", "User1", 100)
+        self.bot._add_user(2, "user2", "User2", 200)
+
+        # Set up participation data
+        self.bot._set_week_phase("optin")
+        self.bot._set_user_participation(1, True)
+        self.bot._set_user_participation(2, True)
+
+        self.bot._set_week_phase("liking")
+        self.bot._set_dislike_status(1, 2, True)
+        self.bot._set_like_status(2, 1, True)
+
+        # Verify data exists
+        participants = self.bot._get_participants()
+        self.assertEqual(len(participants), 2)
+        dislikes = self.bot._get_user_dislikes(1)
+        self.assertEqual(dislikes, {2})
+        likes = self.bot._get_user_likes(2)
+        self.assertIn(1, likes)
+
+        # Reset participation
+        self.bot._reset_current_week_participation()
+
+        # Verify all cleared
+        participants = self.bot._get_participants()
+        self.assertEqual(len(participants), 0)
+        dislikes = self.bot._get_user_dislikes(1)
+        self.assertEqual(len(dislikes), 0)
+        likes = self.bot._get_user_likes(2)
+        self.assertEqual(len(likes), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
