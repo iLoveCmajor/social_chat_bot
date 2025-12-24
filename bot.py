@@ -397,7 +397,7 @@ class SocialChatBot:
 
     def _initialize_likes_for_user(self, user_id: int):
         """Auto-like all other participants for a newly opted-in user (unless disliked)."""
-        if self._is_matching_phase_active():
+        if self._get_week_phase() != 'optin':
             return
         participants = self._get_participants()
         week = self._get_current_week()
@@ -1115,7 +1115,12 @@ class SocialChatBot:
         if action == "intro_yes":
             await query.answer()
             user = query.from_user
+            chat_id = query.message.chat_id if query.message else user_id
             first_name = user.first_name or "Friend"
+
+            # Ensure user is registered in database
+            self._add_user(user.id, user.username, user.first_name, chat_id)
+
             phase = self._get_week_phase()
             if phase == 'optin':
                 await query.message.reply_text(TEXT["welcome_yes_response"])
@@ -1362,6 +1367,8 @@ class SocialChatBot:
             return
 
         if phase == 'liking' and len(participants) <= 1:
+            # Reset entire cycle when forcing backward transition
+            self._reset_current_week_participation()
             self._set_week_phase('optin')
             await update.message.reply_text(TEXT["admin_next_phase_insufficient"])
             return
@@ -1499,8 +1506,8 @@ class SocialChatBot:
                 lines.append(TEXT["admin_list_unmatched_line"].format(
                     name=self._get_display_name(participant_lookup[user_id])
                 ))
-            else:
-                lines.append(TEXT["admin_list_unmatched_none"])
+        else:
+            lines.append(TEXT["admin_list_unmatched_none"])
 
         await update.message.reply_text("\n".join(lines))
 
