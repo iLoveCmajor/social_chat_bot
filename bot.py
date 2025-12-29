@@ -1390,7 +1390,7 @@ class SocialChatBot:
             return
 
         user = update.effective_user
-        phase = self._get_week_phase()
+        phase, phase_started_at = self._get_phase_info()
         participants = self._get_participants()
 
         logger.info(f"ADMIN COMMAND: /admin_next_phase executed by user {user.id} ({user.username}) - current phase: {phase}, participants: {len(participants)}")
@@ -1405,6 +1405,56 @@ class SocialChatBot:
 
         if phase == 'liking' and len(participants) <= 1:
             # Reset entire cycle when forcing backward transition
+            self._reset_current_week_participation()
+            self._set_week_phase('optin')
+            await update.message.reply_text(TEXT["admin_next_phase_insufficient"])
+            return
+
+        # Determine action description for confirmation
+        if phase == 'optin':
+            action_description = f"advance from opt-in to liking phase with {len(participants)} participants"
+        else:  # phase == 'liking'
+            action_description = f"advance from liking to matching phase and send matches to {len(participants)} participants"
+
+        # Calculate time since phase started for context
+        time_info = ""
+        if phase_started_at:
+            try:
+                started_dt = datetime.fromisoformat(phase_started_at)
+                if started_dt.tzinfo is None:
+                    started_dt = started_dt.replace(tzinfo=timezone.utc)
+                time_elapsed = self._now() - started_dt.astimezone(self.timezone)
+                elapsed_minutes = time_elapsed.total_seconds() / 60
+                time_info = f"\n⏱ Current phase started {elapsed_minutes:.0f} minutes ago."
+            except (ValueError, AttributeError):
+                pass
+
+        # Send confirmation prompt
+        await update.message.reply_text(
+            f"⚠️ Are you sure you want to {action_description}?{time_info}\n\n"
+            f"Reply with /admin_next_phase_confirm to proceed."
+        )
+
+    async def admin_next_phase_confirm_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Confirm and execute phase transition."""
+        if not await self._ensure_admin(update):
+            return
+
+        user = update.effective_user
+        phase = self._get_week_phase()
+        participants = self._get_participants()
+
+        logger.info(f"ADMIN COMMAND: /admin_next_phase_confirm executed by user {user.id} ({user.username}) - current phase: {phase}")
+
+        if not participants:
+            await update.message.reply_text(TEXT["admin_next_phase_none"])
+            return
+
+        if phase == 'matching':
+            await update.message.reply_text(TEXT["admin_next_phase_blocked"])
+            return
+
+        if phase == 'liking' and len(participants) <= 1:
             self._reset_current_week_participation()
             self._set_week_phase('optin')
             await update.message.reply_text(TEXT["admin_next_phase_insufficient"])
@@ -1565,10 +1615,35 @@ class SocialChatBot:
         await update.message.reply_text(message)
 
     async def admin_reset_week_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Reset participation data for the current week."""
+        """Show confirmation prompt before resetting participation data."""
         if not await self._ensure_admin(update):
             return
-        
+
+        user = update.effective_user
+        week_label = self._get_current_week_label()
+        phase = self._get_week_phase()
+        participants = self._get_participants()
+
+        logger.info(f"ADMIN COMMAND: /admin_reset requested by user {user.id} ({user.username}) - week: {week_label}, phase: {phase}, participants: {len(participants)}")
+
+        # Send confirmation prompt
+        await update.message.reply_text(
+            f"⚠️ Are you sure you want to reset the current week?\n\n"
+            f"📅 Week: {week_label}\n"
+            f"📊 Current phase: {phase}\n"
+            f"👥 Participants: {len(participants)}\n\n"
+            f"This will clear all participation data, likes, and dislikes for this week and restart the cycle.\n\n"
+            f"Reply with /admin_reset_confirm to proceed."
+        )
+
+    async def admin_reset_week_confirm_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Execute the reset after confirmation."""
+        if not await self._ensure_admin(update):
+            return
+
+        user = update.effective_user
+        logger.info(f"ADMIN COMMAND: /admin_reset_confirm executed by user {user.id} ({user.username})")
+
         deleted = self._reset_current_week_participation()
         week_label = self._get_current_week_label()
         notified = await self.send_weekly_reminder(context) or 0
@@ -1595,9 +1670,11 @@ class SocialChatBot:
         self.application.add_handler(CommandHandler("status", self.status_command))
         self.application.add_handler(CommandHandler("list", self.list_command))
         self.application.add_handler(CommandHandler("admin_next_phase", self.admin_next_phase_command))
+        self.application.add_handler(CommandHandler("admin_next_phase_confirm", self.admin_next_phase_confirm_command))
         self.application.add_handler(CommandHandler("admin_list", self.admin_list_command))
         self.application.add_handler(CommandHandler("admin_status", self.admin_status_command))
         self.application.add_handler(CommandHandler("admin_reset", self.admin_reset_week_command))
+        self.application.add_handler(CommandHandler("admin_reset_confirm", self.admin_reset_week_confirm_command))
         self.application.add_handler(CallbackQueryHandler(self.intro_callback_handler, pattern="^intro_"))
         self.application.add_handler(CallbackQueryHandler(self.list_callback_handler, pattern="^list_"))
         
