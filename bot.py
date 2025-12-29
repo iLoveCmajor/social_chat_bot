@@ -1028,6 +1028,53 @@ class SocialChatBot:
         conn.commit()
         conn.close()
 
+    def _check_minimum_phase_duration(self, current_phase: str, phase_started_at: Optional[str], target_phase: str) -> Tuple[bool, str]:
+        """
+        Check if minimum time has elapsed since phase started.
+
+        Returns:
+            (can_transition, reason_message)
+        """
+        # No timestamp = allow transition (first run or manual phase set)
+        if not phase_started_at:
+            return True, "No timestamp recorded, allowing transition"
+
+        try:
+            # Parse the timestamp
+            started_dt = datetime.fromisoformat(phase_started_at)
+            if started_dt.tzinfo is None:
+                started_dt = started_dt.replace(tzinfo=timezone.utc)
+            started_local = started_dt.astimezone(self.timezone)
+
+            # Calculate elapsed time
+            now = self._now()
+            elapsed = now - started_local
+            elapsed_hours = elapsed.total_seconds() / 3600
+
+            # Define minimum durations based on schedule
+            # Optin→Liking: Monday 10:00→19:00 = 9 hours minimum
+            # Liking→Matching: Monday 19:00→Tuesday 09:00 = 14 hours minimum
+            if target_phase == 'liking':
+                min_hours = 8  # Require at least 8 hours (some buffer below 9)
+                phase_desc = f"optin → liking"
+            elif target_phase == 'matching':
+                min_hours = 12  # Require at least 12 hours (some buffer below 14)
+                phase_desc = f"liking → matching"
+            else:
+                # Unknown target phase, allow
+                return True, f"Unknown target phase {target_phase}, allowing"
+
+            # Check if enough time has passed
+            if elapsed_hours < min_hours:
+                return False, f"Only {elapsed_hours:.1f} hours since {current_phase} started, need {min_hours}+ for {phase_desc}"
+
+            return True, f"Sufficient time elapsed: {elapsed_hours:.1f} hours (min: {min_hours}h)"
+
+        except (ValueError, AttributeError) as e:
+            # On parsing error, block transition for safety
+            logger.error(f"Failed to parse phase_started_at '{phase_started_at}': {e}")
+            return False, f"Timestamp parsing error: {e}"
+
     def _get_bot(self, context: Optional[ContextTypes.DEFAULT_TYPE]):
         """Resolve the bot instance from the context or application."""
         if context and getattr(context, 'bot', None):
@@ -1341,57 +1388,67 @@ class SocialChatBot:
         
         return sent_count
 
-    async def send_participant_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
+    async def send_participant_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None, admin_override: bool = False):
         """Send final matches (matching phase) to all participants."""
         logger.info("SCHEDULED JOB: send_participant_list executing")
 
-        current_phase = self._get_week_phase()
-        logger.info(f"Current phase: {current_phase}")
+        current_phase, phase_started_at = self._get_phase_info()
+        logger.info(f"Current phase: {current_phase}, phase started at: {phase_started_at}")
 
-        # Only transition to matching if we're in liking phase
+        # Phase check: Only transition to matching if we're in liking phase
         if current_phase != 'liking':
             logger.warning(f"SKIPPING: Matching job fired during {current_phase} phase - skipping to avoid disrupting cycle")
             return 0
 
+        # Time guard: Check minimum duration (unless admin override)
+        if not admin_override:
+            can_transition, reason = self._check_minimum_phase_duration(current_phase, phase_started_at, 'matching')
+            if not can_transition:
+                logger.warning(f"SKIPPING: Matching phase transition blocked - {reason}")
+                return 0
+            logger.info(f"Time guard passed: {reason}")
+
+        # Participant check
         participants = self._get_participants()
         if len(participants) <= 1:
             logger.info("SKIPPING: Not enough participants to start matching phase; staying in liking phase.")
             return 0
 
-        logger.info(f"EXECUTING: Transitioning to matching phase with {len(participants)} participants")
+        if admin_override:
+            logger.info(f"EXECUTING: Admin override - transitioning to matching phase with {len(participants)} participants")
+        else:
+            logger.info(f"EXECUTING: Transitioning to matching phase with {len(participants)} participants")
+
         self._start_matching_phase()
         sent_count = await self._broadcast_phase_dashboards(context)
         logger.info(f"COMPLETED: send_participant_list sent {sent_count} matches to {len(participants)} participants")
         return sent_count
 
-    async def send_liking_phase_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
+    async def send_liking_phase_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None, admin_override: bool = False):
         """Send liking phase dashboards to opted-in users."""
         logger.info("SCHEDULED JOB: send_liking_phase_list executing")
 
         current_phase, phase_started_at = self._get_phase_info()
         logger.info(f"Current phase: {current_phase}, phase started at: {phase_started_at}")
 
-        # Only transition to liking if we're in optin phase
+        # Phase check: Only transition to liking if we're in optin phase
         if current_phase != 'optin':
             logger.warning(f"SKIPPING: Liking phase job fired during {current_phase} phase - skipping to avoid disrupting cycle")
             return 0
 
-        # Ensure at least 1 hour has passed since optin phase started
-        if phase_started_at:
-            try:
-                started_dt = datetime.fromisoformat(phase_started_at)
-                if started_dt.tzinfo is None:
-                    started_dt = started_dt.replace(tzinfo=timezone.utc)
-                time_elapsed = self._now() - started_dt.astimezone(self.timezone)
+        # Time guard: Check minimum duration (unless admin override)
+        if not admin_override:
+            can_transition, reason = self._check_minimum_phase_duration(current_phase, phase_started_at, 'liking')
+            if not can_transition:
+                logger.warning(f"SKIPPING: Liking phase transition blocked - {reason}")
+                return 0
+            logger.info(f"Time guard passed: {reason}")
 
-                if time_elapsed.total_seconds() < 3600:  # Less than 1 hour
-                    logger.warning(f"SKIPPING: Liking phase triggered only {time_elapsed.total_seconds()/60:.1f} minutes after optin started - skipping to prevent premature transition")
-                    return 0
-            except (ValueError, AttributeError) as e:
-                logger.warning(f"Could not parse phase_started_at: {e}")
-                logger.error(f"CRITICAL: Time guard bypassed due to parsing error - continuing with phase transition anyway")
+        if admin_override:
+            logger.info(f"EXECUTING: Admin override - transitioning to liking phase")
+        else:
+            logger.info(f"EXECUTING: Transitioning to liking phase")
 
-        logger.info(f"EXECUTING: Transitioning to liking phase (time guard passed or no timestamp)")
         self._set_week_phase('liking')
         sent_count = await self._broadcast_phase_dashboards(context)
         logger.info(f"COMPLETED: send_liking_phase_list sent {sent_count} messages")
@@ -1474,7 +1531,7 @@ class SocialChatBot:
             return
 
         if phase == 'optin':
-            sent = await self.send_liking_phase_list(context)
+            sent = await self.send_liking_phase_list(context, admin_override=True)
             if sent:
                 await update.message.reply_text(TEXT["admin_next_phase_liking_sent"].format(count=sent))
             else:
@@ -1482,7 +1539,7 @@ class SocialChatBot:
             return
 
         # phase == 'liking'
-        sent = await self.send_participant_list(context)
+        sent = await self.send_participant_list(context, admin_override=True)
         if sent:
             await update.message.reply_text(TEXT["admin_next_phase_matching_sent"].format(count=sent))
         else:
@@ -1737,7 +1794,7 @@ class SocialChatBot:
                     timezone=self.timezone
                 ),
                 id=job_id,
-                misfire_grace_time=None
+                max_instances=1  # Only one instance at a time
             )
 
         for day in matching_days:
@@ -1752,7 +1809,7 @@ class SocialChatBot:
                     timezone=self.timezone
                 ),
                 id=job_id,
-                misfire_grace_time=None
+                max_instances=1  # Only one instance at a time
             )
         
         # Add event listeners for scheduler debugging
