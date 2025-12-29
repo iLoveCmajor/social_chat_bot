@@ -24,6 +24,7 @@ from telegram.ext import (
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 from messages import TEXT, BUTTONS, RESPONSES, ALERTS
 
 # Configure logging
@@ -982,10 +983,11 @@ class SocialChatBot:
 
         week = self._get_current_week()
         old_phase = self._get_week_phase()
+        participant_count = len(self._get_participants())
 
-        # Log phase transition
+        # Log phase transition with participant count
         if old_phase != phase:
-            logger.info(f"PHASE CHANGE: {old_phase} → {phase} for week {week}")
+            logger.info(f"PHASE CHANGE: {old_phase} → {phase} for week {week} (participants: {participant_count})")
 
         is_matching = 1 if phase == 'matching' else 0
         conn = sqlite3.connect(self.db_path)
@@ -1270,21 +1272,23 @@ class SocialChatBot:
         logger.info("SCHEDULED JOB: send_weekly_reminder executing")
 
         current_phase = self._get_week_phase()
-        logger.info(f"Current phase before reminder: {current_phase}")
+        participants = self._get_participants()
+        logger.info(f"Current phase before reminder: {current_phase}, participants: {len(participants)}")
 
         # Start new cycle: only transition to optin if we're in matching phase or if no phase is set
         # This prevents Wednesday's reminder from resetting an in-progress Monday cycle
         if current_phase == 'matching':
             # Reset participation for new cycle
+            logger.info("EXECUTING: Resetting participation and starting new optin cycle")
             self._reset_current_week_participation()
             self._set_week_phase('optin')
             logger.info("Starting new cycle: reset participation and set phase to optin")
         elif current_phase == 'optin':
             # Already in optin phase, just continue
-            logger.info("Already in optin phase, continuing current cycle")
+            logger.info("CONTINUING: Already in optin phase, continuing current cycle")
         else:
             # We're in liking phase - don't reset, this reminder came at the wrong time
-            logger.warning(f"Reminder fired during {current_phase} phase - skipping phase change to avoid disrupting current cycle")
+            logger.warning(f"SKIPPING: Reminder fired during {current_phase} phase - skipping phase change to avoid disrupting current cycle")
             return 0
 
         users = self._get_all_active_users()
@@ -1307,6 +1311,7 @@ class SocialChatBot:
             except Exception as e:
                 logger.error(f"Failed to send reminder to user {user['user_id']}: {e}")
 
+        logger.info(f"COMPLETED: send_weekly_reminder sent {sent_count} messages")
         return sent_count
     
     async def _broadcast_phase_dashboards(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
@@ -1345,15 +1350,19 @@ class SocialChatBot:
 
         # Only transition to matching if we're in liking phase
         if current_phase != 'liking':
-            logger.warning(f"Matching job fired during {current_phase} phase - skipping to avoid disrupting cycle")
+            logger.warning(f"SKIPPING: Matching job fired during {current_phase} phase - skipping to avoid disrupting cycle")
             return 0
 
         participants = self._get_participants()
         if len(participants) <= 1:
-            logger.info("Not enough participants to start matching phase; staying in liking phase.")
+            logger.info("SKIPPING: Not enough participants to start matching phase; staying in liking phase.")
             return 0
+
+        logger.info(f"EXECUTING: Transitioning to matching phase with {len(participants)} participants")
         self._start_matching_phase()
-        return await self._broadcast_phase_dashboards(context)
+        sent_count = await self._broadcast_phase_dashboards(context)
+        logger.info(f"COMPLETED: send_participant_list sent {sent_count} matches to {len(participants)} participants")
+        return sent_count
 
     async def send_liking_phase_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send liking phase dashboards to opted-in users."""
@@ -1364,7 +1373,7 @@ class SocialChatBot:
 
         # Only transition to liking if we're in optin phase
         if current_phase != 'optin':
-            logger.warning(f"Liking phase job fired during {current_phase} phase - skipping to avoid disrupting cycle")
+            logger.warning(f"SKIPPING: Liking phase job fired during {current_phase} phase - skipping to avoid disrupting cycle")
             return 0
 
         # Ensure at least 1 hour has passed since optin phase started
@@ -1376,13 +1385,17 @@ class SocialChatBot:
                 time_elapsed = self._now() - started_dt.astimezone(self.timezone)
 
                 if time_elapsed.total_seconds() < 3600:  # Less than 1 hour
-                    logger.warning(f"Liking phase triggered only {time_elapsed.total_seconds()/60:.1f} minutes after optin started - skipping to prevent premature transition")
+                    logger.warning(f"SKIPPING: Liking phase triggered only {time_elapsed.total_seconds()/60:.1f} minutes after optin started - skipping to prevent premature transition")
                     return 0
             except (ValueError, AttributeError) as e:
                 logger.warning(f"Could not parse phase_started_at: {e}")
+                logger.error(f"CRITICAL: Time guard bypassed due to parsing error - continuing with phase transition anyway")
 
+        logger.info(f"EXECUTING: Transitioning to liking phase (time guard passed or no timestamp)")
         self._set_week_phase('liking')
-        return await self._broadcast_phase_dashboards(context)
+        sent_count = await self._broadcast_phase_dashboards(context)
+        logger.info(f"COMPLETED: send_liking_phase_list sent {sent_count} messages")
+        return sent_count
 
     async def admin_next_phase_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Advance the weekly process to the next phase."""
@@ -1742,6 +1755,16 @@ class SocialChatBot:
                 misfire_grace_time=None
             )
         
+        # Add event listeners for scheduler debugging
+        def on_job_executed(event):
+            logger.info(f"SCHEDULER EVENT: Job '{event.job_id}' executed, return value: {event.retval}")
+
+        def on_job_error(event):
+            logger.error(f"SCHEDULER EVENT: Job '{event.job_id}' failed with exception: {event.exception}")
+
+        self.scheduler.add_listener(on_job_executed, EVENT_JOB_EXECUTED)
+        self.scheduler.add_listener(on_job_error, EVENT_JOB_ERROR)
+
         # Start scheduler
         self.scheduler.start()
         logger.info("=" * 60)
