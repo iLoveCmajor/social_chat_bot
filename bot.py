@@ -1500,19 +1500,19 @@ class SocialChatBot:
         participant_lookup = {p['user_id']: p for p in participants}
         week_label = self._get_current_week_label()
 
+        # Common header for all phases
         lines = [
-            TEXT["admin_phase_overview"].format(
-                phase_name=phase_label,
-                started_at=started_at_display
-            ),
+            f"📅 <b>Period:</b> {week_label}",
+            f"🔄 <b>Phase:</b> {phase_label}",
+            f"🕐 <b>Started at:</b> {started_at_display}",
             ""
         ]
 
         if phase == 'optin':
             if not participants:
-                lines.append(TEXT["admin_list_no_participants"].format(week_label=week_label))
+                lines.append(TEXT["admin_list_no_participants"])
             else:
-                lines.append(TEXT["admin_list_optin_header"].format(week_label=week_label))
+                lines.append(TEXT["admin_list_optin_header"])
                 sorted_participants = sorted(
                     participants,
                     key=lambda p: self._get_display_name(p).lower()
@@ -1528,12 +1528,12 @@ class SocialChatBot:
 
         if phase == 'liking':
             if not participants:
-                lines.append(TEXT["admin_list_no_participants"].format(week_label=week_label))
+                lines.append(TEXT["admin_list_no_participants"])
                 await update.message.reply_text("\n".join(lines))
                 return
 
             likes_map, dislikes_map = self._get_week_relationships()
-            lines.append(TEXT["admin_list_optin_header"].format(week_label=week_label))
+            lines.append(TEXT["admin_list_optin_header"])
             sorted_participants = sorted(
                 participants,
                 key=lambda p: self._get_display_name(p).lower()
@@ -1564,7 +1564,7 @@ class SocialChatBot:
 
         # phase == matching
         if not participants:
-            lines.append(TEXT["admin_list_no_participants"].format(week_label=week_label))
+            lines.append(TEXT["admin_list_no_participants"])
             await update.message.reply_text("\n".join(lines))
             return
 
@@ -1590,7 +1590,7 @@ class SocialChatBot:
             key=lambda uid: self._get_display_name(participant_lookup[uid]).lower()
         )
 
-        lines = [TEXT["admin_pairs_header"].format(week_label=week_label)]
+        lines.append(TEXT["admin_pairs_header"])
         if pairs:
             for idx, (user_a, user_b) in enumerate(pairs, 1):
                 name_a = self._get_display_name(participant_lookup[user_a])

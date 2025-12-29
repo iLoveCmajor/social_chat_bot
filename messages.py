@@ -82,13 +82,13 @@ TEXT = {
         "• Opted out: {opted_out}\n"
         "• No response yet: {pending}"
     ),
-    "admin_pairs_header": "🤝 Matches for {week_label}:",
+    "admin_pairs_header": "🤝 Matches:",
     "admin_pairs_line": "{idx}. {name_a} ❤️ {name_b}",
     "admin_pairs_none": "🤝 No mutual matches were created this week.",
-    "admin_list_optin_header": "📝 Opt-in overview for {week_label}:",
+    "admin_list_optin_header": "📝 Opt-in overview:",
     "admin_list_participant_line": "• {name}\n  Likes: {likes}\n  Dislikes: {dislikes}",
     "admin_list_none": "None",
-    "admin_list_no_participants": "ℹ️ No opted-in participants for {week_label}.",
+    "admin_list_no_participants": "ℹ️ No opted-in participants.",
     "admin_list_unmatched_header": "🙋 Unmatched participants:",
     "admin_list_unmatched_line": "• {name}",
     "admin_list_unmatched_none": "Everyone received a match this week!",
