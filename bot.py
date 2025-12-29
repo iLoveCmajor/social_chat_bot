@@ -187,9 +187,14 @@ class SocialChatBot:
     def _set_user_participation(self, user_id: int, opted_in: bool):
         """Set user's participation status for current week."""
         week = self._get_current_week()
+        phase = self._get_week_phase()
+
+        # Log user participation change
+        logger.info(f"USER ACTION: User {user_id} {'opted IN' if opted_in else 'opted OUT'} during {phase} phase (week {week})")
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         cursor.execute('''
             INSERT INTO weekly_participation (user_id, week_year, opted_in)
             VALUES (?, ?, ?)
@@ -976,6 +981,12 @@ class SocialChatBot:
             raise ValueError(f"Invalid phase: {phase}")
 
         week = self._get_current_week()
+        old_phase = self._get_week_phase()
+
+        # Log phase transition
+        if old_phase != phase:
+            logger.info(f"PHASE CHANGE: {old_phase} → {phase} for week {week}")
+
         is_matching = 1 if phase == 'matching' else 0
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -1256,7 +1267,10 @@ class SocialChatBot:
     
     async def send_weekly_reminder(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send weekly reminder to all active users."""
+        logger.info("SCHEDULED JOB: send_weekly_reminder executing")
+
         current_phase = self._get_week_phase()
+        logger.info(f"Current phase before reminder: {current_phase}")
 
         # Start new cycle: only transition to optin if we're in matching phase or if no phase is set
         # This prevents Wednesday's reminder from resetting an in-progress Monday cycle
@@ -1324,7 +1338,10 @@ class SocialChatBot:
 
     async def send_participant_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send final matches (matching phase) to all participants."""
+        logger.info("SCHEDULED JOB: send_participant_list executing")
+
         current_phase = self._get_week_phase()
+        logger.info(f"Current phase: {current_phase}")
 
         # Only transition to matching if we're in liking phase
         if current_phase != 'liking':
@@ -1340,12 +1357,29 @@ class SocialChatBot:
 
     async def send_liking_phase_list(self, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
         """Send liking phase dashboards to opted-in users."""
-        current_phase = self._get_week_phase()
+        logger.info("SCHEDULED JOB: send_liking_phase_list executing")
+
+        current_phase, phase_started_at = self._get_phase_info()
+        logger.info(f"Current phase: {current_phase}, phase started at: {phase_started_at}")
 
         # Only transition to liking if we're in optin phase
         if current_phase != 'optin':
             logger.warning(f"Liking phase job fired during {current_phase} phase - skipping to avoid disrupting cycle")
             return 0
+
+        # Ensure at least 1 hour has passed since optin phase started
+        if phase_started_at:
+            try:
+                started_dt = datetime.fromisoformat(phase_started_at)
+                if started_dt.tzinfo is None:
+                    started_dt = started_dt.replace(tzinfo=timezone.utc)
+                time_elapsed = self._now() - started_dt.astimezone(self.timezone)
+
+                if time_elapsed.total_seconds() < 3600:  # Less than 1 hour
+                    logger.warning(f"Liking phase triggered only {time_elapsed.total_seconds()/60:.1f} minutes after optin started - skipping to prevent premature transition")
+                    return 0
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Could not parse phase_started_at: {e}")
 
         self._set_week_phase('liking')
         return await self._broadcast_phase_dashboards(context)
@@ -1355,8 +1389,11 @@ class SocialChatBot:
         if not await self._ensure_admin(update):
             return
 
+        user = update.effective_user
         phase = self._get_week_phase()
         participants = self._get_participants()
+
+        logger.info(f"ADMIN COMMAND: /admin_next_phase executed by user {user.id} ({user.username}) - current phase: {phase}, participants: {len(participants)}")
 
         if not participants:
             await update.message.reply_text(TEXT["admin_next_phase_none"])
@@ -1630,10 +1667,18 @@ class SocialChatBot:
         
         # Start scheduler
         self.scheduler.start()
-        logger.info("Scheduler started")
-        
+        logger.info("=" * 60)
+        logger.info("SCHEDULER STARTED")
+        logger.info(f"Timezone: {self.timezone}")
+        logger.info(f"Reminder: days={reminder_days}, time={reminder_hour:02d}:{reminder_minute:02d}")
+        logger.info(f"Liking: days={liking_days}, time={liking_hour:02d}:{liking_minute:02d}")
+        logger.info(f"Matching: days={matching_days}, time={matching_hour:02d}:{matching_minute:02d}")
+        logger.info(f"Current week: {self._get_current_week()}")
+        logger.info(f"Current phase: {self._get_week_phase()}")
+        logger.info("=" * 60)
+
         # Start bot
-        logger.info("Starting bot...")
+        logger.info("Starting bot polling...")
         self.application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
