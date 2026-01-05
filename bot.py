@@ -1336,8 +1336,9 @@ class SocialChatBot:
             self._set_week_phase('optin')
             logger.info("Starting new cycle: reset participation and set phase to optin")
         elif current_phase == 'optin':
-            # Already in optin phase, just continue
+            # Already in optin phase, refresh timestamp and continue
             logger.info("CONTINUING: Already in optin phase, continuing current cycle")
+            self._set_week_phase('optin')  # Refresh phase_started_at timestamp
         else:
             # We're in liking phase - don't reset, this reminder came at the wrong time
             logger.warning(f"SKIPPING: Reminder fired during {current_phase} phase - skipping phase change to avoid disrupting current cycle")
@@ -1766,10 +1767,10 @@ class SocialChatBot:
         matching_days = self._normalize_days(matching_days_config, 0)
         matching_time_str = self.config.get('matching_time')
         
-        # Parse times
-        reminder_hour, reminder_minute = self._parse_time_config(reminder_time_str, '09:00', 'reminder_time')
-        liking_hour, liking_minute = self._parse_time_config(liking_time_str, '11:00', 'liking_time')
-        matching_hour, matching_minute = self._parse_time_config(matching_time_str, '12:00', 'matching_time')
+        # Parse times (fallback defaults match production config)
+        reminder_hour, reminder_minute = self._parse_time_config(reminder_time_str, '10:00', 'reminder_time')
+        liking_hour, liking_minute = self._parse_time_config(liking_time_str, '19:00', 'liking_time')
+        matching_hour, matching_minute = self._parse_time_config(matching_time_str, '09:00', 'matching_time')
         
         # Add jobs to scheduler
         for day in reminder_days:

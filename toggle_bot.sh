@@ -5,6 +5,29 @@ BOT_PROCESS=$(pgrep -f "python3 bot.py")
 
 if [ -z "$BOT_PROCESS" ]; then
   echo "🤖 Bot is not running. Starting it..."
+
+  # Display config (hide token for security)
+  echo ""
+  echo "📋 Configuration:"
+  if [ -f "config.json" ]; then
+    python3 << 'EOF'
+import json
+try:
+    with open('config.json') as f:
+        cfg = json.load(f)
+    print(f"  Timezone: {cfg.get('timezone', 'NOT SET')}")
+    print(f"  Reminder: days={cfg.get('reminder_days', 'NOT SET')}, time={cfg.get('reminder_time', 'NOT SET')}")
+    print(f"  Liking:   days={cfg.get('liking_days', 'NOT SET')}, time={cfg.get('liking_time', 'NOT SET')}")
+    print(f"  Matching: days={cfg.get('matching_days', 'NOT SET')}, time={cfg.get('matching_time', 'NOT SET')}")
+    print(f"  Admin IDs: {cfg.get('admin_ids', 'NOT SET')}")
+except Exception as e:
+    print(f"  ⚠️  Error reading config: {e}")
+EOF
+  else
+    echo "  ⚠️  config.json NOT FOUND!"
+  fi
+  echo ""
+
   TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
   LOG_FILE="bot_${TIMESTAMP}.log"
   nohup ./start.sh > "$LOG_FILE" 2>&1 &
