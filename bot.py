@@ -34,6 +34,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Suppress noisy HTTP transport logs - only show warnings/errors
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('telegram').setLevel(logging.WARNING)
+logging.getLogger('telegram.ext').setLevel(logging.WARNING)
+
 
 def _parse_admin_ids(value) -> List[int]:
     """Parse admin IDs from config/env inputs."""
